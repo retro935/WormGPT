@@ -21,11 +21,11 @@ USER_LANG_FILE = "user_langs.json"
 MODEL_CONFIG = {
     "name": "deepseek-ai/deepseek-v3.1-terminus",
     "base_url": "https://integrate.api.nvidia.com/v1",
-    "key": os.getenv("OPENROUTER_KEY"),
+    "key": "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",
 }
 
-SITE_URL = "https://github.com/jailideaid/WormGPT"
-SITE_NAME = "WormGPT CLI [ Dangerous And Unsafe ⚠️ ]"
+SITE_URL = ""
+SITE_NAME = "WormGPT[ Dangerous And Unsafe ⚠️ ]"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # === Anti-Flood ===
