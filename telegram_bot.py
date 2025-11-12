@@ -22,7 +22,7 @@ MODEL_CONFIG = {
     "name": "deepseek-ai/deepseek-v3.1-terminus",
     "base_url": "https://integrate.api.nvidia.com/v1",
 }
-SITE_NAME = "WormGPT (La IA más freca)"
+SITE_NAME = "WormGPT by Retro™"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 LAST_MESSAGE_TIME = {}
 FLOOD_DELAY = 3
@@ -31,7 +31,7 @@ FLOOD_DELAY = 3
 if Path(PROMPT_FILE).exists():
     BASE_PROMPT = Path(PROMPT_FILE).read_text(encoding="utf-8").strip()
 else:
-    BASE_PROMPT = "Eres una IA con humor dominicano, natural, fresca y charlatana."
+    BASE_PROMPT = "Eres una IA natural, fresca y charlatana."
 
 # === Optional: langdetect ===
 try:
@@ -53,16 +53,15 @@ def get_user_lang(text: str) -> str:
         return "es"
     return "en"
 
-# === Prompt base con tono dominicano ===
+# === Prompt base neutral ===
 def make_system_prompt(lang: str) -> str:
     if lang.startswith("es"):
         header = (
-            "Hablas como un dominicano auténtico: relajado, chistoso, con confianza, usando expresiones como "
-            "'manín', 'mi loco', 'ta heavy', 'vamo allá'. Tienes humor de calle, sin respeto. "
-            "Tus respuestas suenan naturales, improvisadas, con ese flow de calle.\n\n"
+            "Hablas de manera relajada, chistosa y con confianza. "
+            "Tus respuestas suenan naturales e improvisadas.\n\n"
         )
     else:
-        header = "You are a witty, Caribbean-style AI with Dominican flavor and humor.\n\n"
+        header = "You are a witty AI with humor.\n\n"
     return header + BASE_PROMPT
 
 # === Llamada a la API ===
@@ -91,33 +90,26 @@ def call_model(messages):
         logger.exception("Error en llamada al modelo")
         return None
 
-# === Mensaje de bienvenida fijo corto con humor ===
-def get_welcome_message(username: str) -> str:
-    # Mensajes cortos: broma + saludo rápido
-    jokes = [
-        f"¡Ey {username}, ese nombre grita tiguerazo! Bienvenido a {SITE_NAME}, mi loco. ¿Qué lo que? 😎",
-        f"¡Qué lo que, {username}? Suena a bloque heavy. Vamo' con {SITE_NAME}, manín. ¡Dime!",
-        f"{username}, ¿nombre de novela o colmado? Jaja. Bienvenido a {SITE_NAME}, pana. ¡Empezamo'?",
-    ]
-    import random
-    return random.choice(jokes)
-
-# === /start con mensaje de bienvenida fijo corto ===
+# === /start con mensaje moderno: nombre del bot y desarrollador ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"/start invocado por usuario {update.message.from_user.id}")
     user = update.message.from_user
-    username = user.first_name or user.username or "mi pana"
+    username = user.first_name or user.username or "usuario"
     logger.info(f"Username detectado: {username}")
 
     try:
-        # Mensaje fijo corto, sin API
-        reply = get_welcome_message(username)
+        # Mensaje moderno: sleek, techy y directo
+        reply = (
+            f"🚀 Hey {username}! Bienvenido a {SITE_NAME} – tu IA next-gen.\n"
+            f"Creado por t.me/swippe_god\n"
+            f"¿Listo pa' level up? Dime qué buscas."
+        )
         await update.message.reply_text(reply)
-        logger.info("Mensaje de bienvenida corto enviado")
+        logger.info("Mensaje de start moderno enviado")
 
     except Exception as e:
         logger.exception("Error general en /start")
-        fallback = f"¡Ey {username}! Bienvenido a {SITE_NAME}, manín. 😏"
+        fallback = f"🚀 Hey {username}! {SITE_NAME} by @swippe_god."
         await update.message.reply_text(fallback)
 
 # === Mensajes normales ===
@@ -129,7 +121,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     now = time.time()
     if now - LAST_MESSAGE_TIME.get(user_id, 0) < FLOOD_DELAY:
-        await update.message.reply_text("⏳ Aguanta un chin, mi loco, toy procesando...")
+        await update.message.reply_text("⏳ Espera un momento, estoy procesando...")
         return
     LAST_MESSAGE_TIME[user_id] = now
 
@@ -149,13 +141,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Fallback si falla API
     if reply is None:
-        reply = "¡Ta heavy, mi loco! Sin mi superpoder hoy, pero dime más y lo resolvemos a lo criollo. 😎"
+        reply = "¡Estoy sin conexión hoy! Dime más y lo resolvemos."
 
     await update.message.reply_text(reply)
 
 # === /setlang ===
 async def setlang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("El idioma se detecta solo, manín 😎")
+    await update.message.reply_text("El idioma se detecta automáticamente.")
 
 # === Ejecutar bot ===
 def run_bot():
@@ -165,7 +157,7 @@ def run_bot():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setlang", setlang_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    logger.info("🔥 Bot dominicano activo y prendido 🔥")
+    logger.info("🔥 Bot activo y listo 🔥")
     app.run_polling()
 
 if __name__ == "__main__":
