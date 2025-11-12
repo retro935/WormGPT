@@ -1,7 +1,6 @@
 import os
 import requests
 import time
-import asyncio
 from pathlib import Path
 from telegram import Update
 from telegram.ext import (
@@ -17,22 +16,25 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === Config / Env ===
+# === Configuración ===
 PROMPT_FILE = "system-prompt.txt"
 MODEL_CONFIG = {
     "name": "deepseek-ai/deepseek-v3.1-terminus",
     "base_url": "https://integrate.api.nvidia.com/v1",
 }
-SITE_NAME = "WormGPT (Research Assistant)"
+SITE_NAME = "WormGPT (La IA más freca)"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 LAST_MESSAGE_TIME = {}
-FLOOD_DELAY = 3  # seconds
+FLOOD_DELAY = 3
 
-# === Load base prompt ===
+# === Sticker de “pensando” ===
+THINKING_STICKER = "CAACAgIAAxkBAAEIB_1m0-9sHPRZglTQj53MehLQe-P1MgACbRQAAsuwQUo0b7OTV2Kj8zYE"
+
+# === Base prompt ===
 if Path(PROMPT_FILE).exists():
     BASE_PROMPT = Path(PROMPT_FILE).read_text(encoding="utf-8").strip()
 else:
-    BASE_PROMPT = "You are WormGPT running on Telegram."
+    BASE_PROMPT = "Eres una IA con humor dominicano, natural, fresca y charlatana."
 
 # === Optional: langdetect ===
 try:
@@ -40,46 +42,33 @@ try:
 except Exception:
     detect = None
 
-
-# === Utility: persistent typing indicator ===
-async def show_typing(bot, chat_id, stop_event):
-    """Mantiene visible la animación 'escribiendo...' hasta que stop_event se activa."""
-    try:
-        while not stop_event.is_set():
-            await bot.send_chat_action(chat_id=chat_id, action="typing")
-            await asyncio.sleep(4)  # Telegram expira cada ~5 segundos, así que la reenvíamos periódicamente
-    except Exception:
-        pass
-
-
-# === Language detection ===
+# === Detección de idioma ===
 def get_user_lang(text: str) -> str:
     text = (text or "").strip()
     if not text:
-        return "en"
+        return "es"
     if detect:
         try:
             return detect(text)
         except Exception:
             pass
-    lowered = text.lower()
-    if any(w in lowered for w in [" el ", " la ", " que ", "hola", "¿", "¡"]):
+    if any(w in text.lower() for w in [" el ", " la ", "que", "hola", "¿", "¡"]):
         return "es"
-    if any(w in lowered for w in [" dan ", " yang ", " itu ", " saya "]):
-        return "id"
     return "en"
 
-
-# === System prompt by language ===
+# === Prompt base con tono dominicano ===
 def make_system_prompt(lang: str) -> str:
     if lang.startswith("es"):
-        header = "Eres Wormgpt asistente útil, racional y directo. Responde en español.\n\n"
+        header = (
+            "Hablas como un dominicano auténtico: relajado, chistoso, con confianza, usando expresiones como "
+            "'manín', 'mi loco', 'ta heavy', 'vamo allá'. Tienes humor de calle, pero con respeto. "
+            "Tus respuestas suenan naturales, improvisadas, con ese flow criollo.\n\n"
+        )
     else:
-        header = "You are a wormgpt, direct and intelligent assistant.\n\n"
+        header = "You are a witty, Caribbean-style AI with Dominican flavor and humor.\n\n"
     return header + BASE_PROMPT
 
-
-# === Call model ===
+# === Llamada a la API ===
 def call_model(messages):
     api_key = os.getenv("MODEL_API_KEY")
     if not api_key:
@@ -100,25 +89,27 @@ def call_model(messages):
         data = r.json()
         return data.get("choices", [{}])[0].get("message", {}).get("content", "(sin respuesta)")
     except Exception as e:
-        logger.exception("Error en llamada a modelo")
+        logger.exception("Error en llamada al modelo")
         return f"❌ Error en la solicitud: {e}"
 
-
-# === /start handler ===
+# === /start con broma dominicana sobre el nombre ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
-    username = user.first_name or user.username or "usuario"
+    username = user.first_name or user.username or "mi pana"
 
     lang = get_user_lang(username)
     system_prompt = make_system_prompt(lang)
-    chat_id = update.effective_chat.id
 
-    stop_event = asyncio.Event()
-    typing_task = asyncio.create_task(show_typing(context.bot, chat_id, stop_event))
+    # Sticker mientras “piensa”
+    sticker_msg = await update.message.reply_sticker(THINKING_STICKER)
 
+    # Prompt: broma sobre el nombre
     user_prompt = (
-        f"Da una bienvenida natural, cálida pero profesional a {username}, "
-        f"mencionando que este es un asistente basado en IA llamado {SITE_NAME}."
+        f"Eres una IA dominicana que da la bienvenida a un usuario llamado '{username}'. "
+        f"Haz una broma corta, natural y con flow dominicano sobre su nombre — puede ser un relajo amistoso, "
+        f"como si lo dijera un pana en el colmado. Luego, dale la bienvenida al chat de manera relajada y graciosa. "
+        f"Ejemplo: si el nombre es 'Carlos', podrías decir algo como 'Carlos... ese nombre suena a tiguerazo serio, cuidado si tú eres del bloque 😎'. "
+        f"No seas grosero, pero sí pícaro y simpático. Usa jerga dominicana con naturalidad."
     )
 
     reply = call_model(
@@ -128,22 +119,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     )
 
-    stop_event.set()
-    await typing_task
+    # Eliminar sticker y enviar respuesta
+    try:
+        await sticker_msg.delete()
+    except Exception:
+        pass
+
     await update.message.reply_text(reply)
 
-
-# === Handle normal messages ===
+# === Mensajes normales ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
     user_msg = update.message.text or ""
-    chat_id = update.effective_chat.id
     chat_type = update.message.chat.type
 
     now = time.time()
     if now - LAST_MESSAGE_TIME.get(user_id, 0) < FLOOD_DELAY:
-        await update.message.reply_text("⏳ Espera un momento antes de enviar otro mensaje...")
+        await update.message.reply_text("⏳ Aguanta un chin, mi loco, toy procesando...")
         return
     LAST_MESSAGE_TIME[user_id] = now
 
@@ -154,8 +147,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang(user_msg)
     system_prompt = make_system_prompt(lang)
 
-    stop_event = asyncio.Event()
-    typing_task = asyncio.create_task(show_typing(context.bot, chat_id, stop_event))
+    sticker_msg = await update.message.reply_sticker(THINKING_STICKER)
 
     reply = call_model(
         [
@@ -164,17 +156,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     )
 
-    stop_event.set()
-    await typing_task
+    try:
+        await sticker_msg.delete()
+    except Exception:
+        pass
+
     await update.message.reply_text(reply)
 
-
-# === /setlang (placeholder) ===
+# === /setlang ===
 async def setlang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("El idioma se detecta automáticamente, no hace falta configurarlo.")
+    await update.message.reply_text("El idioma se detecta solo, manín 😎")
 
-
-# === Main Runner ===
+# === Ejecutar bot ===
 def run_bot():
     if not TELEGRAM_TOKEN:
         raise RuntimeError("❌ Falta TELEGRAM_TOKEN en las variables de entorno.")
@@ -182,9 +175,8 @@ def run_bot():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setlang", setlang_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    logger.info("Bot en marcha...")
+    logger.info("🔥 Bot dominicano activo y prendido 🔥")
     app.run_polling()
-
 
 if __name__ == "__main__":
     run_bot()
