@@ -28,7 +28,7 @@ LAST_MESSAGE_TIME = {}
 FLOOD_DELAY = 3
 
 # === Sticker de “pensando” ===
-THINKING_STICKER = "CAACAgIAAxkBAAEIB_1m0-9sHPRZglTQj53MehLQe-P1MgACbRQAAsuwQUo0b7OTV2Kj8zYE"
+THINKING_STICKER = "AAMCAgADGQECcRwmaRUAAeVEayGbv2XGu80OXC_i1RxJAAK-EAACXiTZSlEb4vId1vPKAQAHbQADNgQ"
 
 # === Base prompt ===
 if Path(PROMPT_FILE).exists():
@@ -72,10 +72,11 @@ def make_system_prompt(lang: str) -> str:
 def call_model(messages):
     api_key = os.getenv("MODEL_API_KEY")
     if not api_key:
-        return "❌ Falta la variable de entorno MODEL_API_KEY."
+        logger.warning("MODEL_API_KEY no configurada")
+        return None  # Cambié a None pa' manejar en el handler
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {"model": MODEL_CONFIG["name"], "messages": messages, "max_tokens": 512}
+    payload = {"model": MODEL_CONFIG["name"], "messages": messages, "max_tokens": 1024}  # Subí tokens pa' más flow
 
     try:
         r = requests.post(
@@ -85,47 +86,70 @@ def call_model(messages):
             timeout=45,
         )
         if r.status_code != 200:
-            return f"⚠️ Error API ({r.status_code}): {r.text}"
+            logger.error(f"Error API: {r.status_code} - {r.text}")
+            return None
         data = r.json()
         return data.get("choices", [{}])[0].get("message", {}).get("content", "(sin respuesta)")
     except Exception as e:
         logger.exception("Error en llamada al modelo")
-        return f"❌ Error en la solicitud: {e}"
+        return None
 
-# === /start con broma dominicana sobre el nombre ===
+# === /start con broma dominicana sobre el nombre (con error handling heavy) ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"/start invocado por usuario {update.message.from_user.id}")
     user = update.message.from_user
     username = user.first_name or user.username or "mi pana"
+    logger.info(f"Username detectado: {username}")
 
-    lang = get_user_lang(username)
-    system_prompt = make_system_prompt(lang)
-
-    # Sticker mientras “piensa”
-    sticker_msg = await update.message.reply_sticker(THINKING_STICKER)
-
-    # Prompt: broma sobre el nombre
-    user_prompt = (
-        f"Eres una IA dominicana que da la bienvenida a un usuario llamado '{username}'. "
-        f"Haz una broma corta, natural y con flow dominicano sobre su nombre — puede ser un relajo amistoso, "
-        f"como si lo dijera un pana en el colmado. Luego, dale la bienvenida al chat de manera relajada y graciosa. "
-        f"Ejemplo: si el nombre es 'Carlos', podrías decir algo como 'Carlos... ese nombre suena a tiguerazo serio, cuidado si tú eres del bloque 😎'. "
-        f"No seas grosero, pero sí pícaro y simpático. Usa jerga dominicana con naturalidad."
-    )
-
-    reply = call_model(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-    )
-
-    # Eliminar sticker y enviar respuesta
     try:
-        await sticker_msg.delete()
-    except Exception:
-        pass
+        lang = get_user_lang(username)
+        system_prompt = make_system_prompt(lang)
+        logger.info(f"Idioma detectado: {lang}")
 
-    await update.message.reply_text(reply)
+        # Sticker mientras “piensa” (opcional, no crashea si falla)
+        sticker_msg = None
+        try:
+            sticker_msg = await update.message.reply_sticker(THINKING_STICKER)
+            logger.info("Sticker enviado")
+        except Exception as e:
+            logger.warning(f"Sticker falló: {e}")
+
+        # Prompt: broma sobre el nombre
+        user_prompt = (
+            f"Eres una IA dominicana que da la bienvenida a un usuario llamado '{username}'. "
+            f"Haz una broma corta, natural y con flow dominicano sobre su nombre — puede ser un relajo amistoso, "
+            f"como si lo dijera un pana en el colmado. Luego, dale la bienvenida al chat de manera relajada y graciosa. "
+            f"Ejemplo: si el nombre es 'Carlos', podrías decir algo como 'Carlos... ese nombre suena a tiguerazo serio, cuidado si tú eres del bloque 😎'. "
+            f"No seas grosero, pero sí pícaro y simpático. Usa jerga dominicana con naturalidad."
+        )
+
+        reply = call_model(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+
+        # Si falla la API, fallback gracioso
+        if reply is None:
+            reply = f"¡Ey {username}, ta heavy que toy sin mi cafecito de IA hoy! Bienvenido a {SITE_NAME}, mi loco. Vamo' a charlar cuando prenda el motor. 😎"
+
+        # Eliminar sticker si existe
+        if sticker_msg:
+            try:
+                await sticker_msg.delete()
+                logger.info("Sticker eliminado")
+            except Exception as e:
+                logger.warning(f"No se pudo eliminar sticker: {e}")
+
+        await update.message.reply_text(reply)
+        logger.info("Respuesta de /start enviada")
+
+    except Exception as e:
+        logger.exception("Error general en /start")
+        # Siempre responde algo, no crashea
+        fallback = f"¡Ups, {username}! Algo se atoro' en el colmado digital. Bienvenido igual a {SITE_NAME}, manín. Dime qué pasa y lo arreglamos. 😏"
+        await update.message.reply_text(fallback)
 
 # === Mensajes normales ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,6 +179,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"role": "user", "content": user_msg},
         ]
     )
+
+    # Fallback si falla API
+    if reply is None:
+        reply = "¡Ta heavy, mi loco! Sin mi superpoder hoy, pero dime más y lo resolvemos a lo criollo. 😎"
 
     try:
         await sticker_msg.delete()
