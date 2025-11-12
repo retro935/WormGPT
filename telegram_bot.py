@@ -3,6 +3,7 @@ import requests
 import time
 from pathlib import Path
 from telegram import Update
+from telegram.constants import ChatAction  # ← NUEVO: Pa' el typing indicator
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -28,7 +29,7 @@ LAST_MESSAGE_TIME = {}
 FLOOD_DELAY = 3
 
 # === Sticker de “pensando” ===
-THINKING_STICKER = "AAMCAgADGQECcRwmaRUAAeVEayGbv2XGu80OXC_i1RxJAAK-EAACXiTZSlEb4vId1vPKAQAHbQADNgQ"
+THINKING_STICKER = "CAACAgIAAxkBAAEIB_1m0-9sHPRZglTQj53MehLQe-P1MgACbRQAAsuwQUo0b7OTV2Kj8zYE"
 
 # === Base prompt ===
 if Path(PROMPT_FILE).exists():
@@ -73,17 +74,17 @@ def call_model(messages):
     api_key = os.getenv("MODEL_API_KEY")
     if not api_key:
         logger.warning("MODEL_API_KEY no configurada")
-        return None  # Cambié a None pa' manejar en el handler
+        return None
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {"model": MODEL_CONFIG["name"], "messages": messages, "max_tokens": 1024}  # Subí tokens pa' más flow
+    payload = {"model": MODEL_CONFIG["name"], "messages": messages, "max_tokens": 1024}
 
     try:
         r = requests.post(
             f"{MODEL_CONFIG['base_url']}/chat/completions",
             headers=headers,
             json=payload,
-            timeout=45,
+            timeout=60,  # ← Subí timeout pa' más paciencia
         )
         if r.status_code != 200:
             logger.error(f"Error API: {r.status_code} - {r.text}")
@@ -94,7 +95,24 @@ def call_model(messages):
         logger.exception("Error en llamada al modelo")
         return None
 
-# === /start con broma dominicana sobre el nombre (con error handling heavy) ===
+# === Función helper pa' enviar typing + sticker/emoji ===
+async def send_thinking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    # Envía typing indicator
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    logger.info("Typing indicator enviado")
+
+    # Sticker o fallback emoji
+    try:
+        sticker_msg = await update.message.reply_sticker(THINKING_STICKER)
+        logger.info("Sticker enviado exitosamente")
+        return sticker_msg
+    except Exception as e:
+        logger.warning(f"Sticker falló: {e} — Enviando emoji fallback")
+        emoji_msg = await update.message.reply_text("🤔 Toy pensando heavy...")
+        return emoji_msg  # Retorna el mensaje fallback pa' borrarlo después
+
+# === /start con broma dominicana sobre el nombre ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"/start invocado por usuario {update.message.from_user.id}")
     user = update.message.from_user
@@ -106,13 +124,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         system_prompt = make_system_prompt(lang)
         logger.info(f"Idioma detectado: {lang}")
 
-        # Sticker mientras “piensa” (opcional, no crashea si falla)
-        sticker_msg = None
-        try:
-            sticker_msg = await update.message.reply_sticker(THINKING_STICKER)
-            logger.info("Sticker enviado")
-        except Exception as e:
-            logger.warning(f"Sticker falló: {e}")
+        # Typing + sticker/emoji
+        thinking_msg = await send_thinking(update, context)
 
         # Prompt: broma sobre el nombre
         user_prompt = (
@@ -130,24 +143,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         )
 
-        # Si falla la API, fallback gracioso
+        # Fallback si falla API
         if reply is None:
             reply = f"¡Ey {username}, ta heavy que toy sin mi cafecito de IA hoy! Bienvenido a {SITE_NAME}, mi loco. Vamo' a charlar cuando prenda el motor. 😎"
 
-        # Eliminar sticker si existe
-        if sticker_msg:
-            try:
-                await sticker_msg.delete()
-                logger.info("Sticker eliminado")
-            except Exception as e:
-                logger.warning(f"No se pudo eliminar sticker: {e}")
+        # Borra el thinking (sticker o emoji)
+        try:
+            await thinking_msg.delete()
+            logger.info("Thinking msg eliminado")
+        except Exception as e:
+            logger.warning(f"No se pudo eliminar thinking: {e}")
 
         await update.message.reply_text(reply)
         logger.info("Respuesta de /start enviada")
 
     except Exception as e:
         logger.exception("Error general en /start")
-        # Siempre responde algo, no crashea
         fallback = f"¡Ups, {username}! Algo se atoro' en el colmado digital. Bienvenido igual a {SITE_NAME}, manín. Dime qué pasa y lo arreglamos. 😏"
         await update.message.reply_text(fallback)
 
@@ -171,7 +182,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang(user_msg)
     system_prompt = make_system_prompt(lang)
 
-    sticker_msg = await update.message.reply_sticker(THINKING_STICKER)
+    # Typing + sticker/emoji
+    thinking_msg = await send_thinking(update, context)
 
     reply = call_model(
         [
@@ -184,8 +196,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if reply is None:
         reply = "¡Ta heavy, mi loco! Sin mi superpoder hoy, pero dime más y lo resolvemos a lo criollo. 😎"
 
+    # Borra el thinking
     try:
-        await sticker_msg.delete()
+        await thinking_msg.delete()
     except Exception:
         pass
 
