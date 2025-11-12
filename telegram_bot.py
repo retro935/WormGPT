@@ -19,8 +19,8 @@ PROMPT_FILE = "system-prompt.txt"
 USER_LANG_FILE = "user_langs.json"
 
 MODEL_CONFIG = {
-    "name": "deepseek/deepseek-chat-v3.1:free",
-    "base_url": "https://openrouter.ai/api/v1",
+    "name": "deepseek-ai/deepseek-v3.1-terminus",
+    "base_url": "https://integrate.api.nvidia.com/v1",
     "key": os.getenv("OPENROUTER_KEY"),
 }
 
