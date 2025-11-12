@@ -1,5 +1,5 @@
 {
-  "api_key": "YOUR_KEY_OPENROUTER",
-  "base_url": "https://openrouter.ai/api/v1",
-  "model": "deepseek/deepseek-chat"
+  "api_key": "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",
+  "base_url": "https://integrate.api.nvidia.com/v1",
+  "model": "deepseek-ai/deepseek-v3.1-terminus"
 }
