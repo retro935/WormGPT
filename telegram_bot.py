@@ -19,7 +19,7 @@ PROMPT_FILE = "system-prompt.txt"
 USER_LANG_FILE = "user_langs.json"
 
 MODEL_CONFIG = {
-    "name": "deepseek/deepseek-chat",
+    "name": "agentica-org/deepcoder-14b-preview:free",
     "base_url": "https://openrouter.ai/api/v1",
     "key": os.getenv("OPENROUTER_KEY"),
 }
