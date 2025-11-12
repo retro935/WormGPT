@@ -1,5 +1,16 @@
-import os import requests import json import time from pathlib import Path from telegram import Update from telegram.ext import ( ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, )
-
+import os
+import requests
+import json
+import time
+from pathlib import Path
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 === Config / Env ===
 
 CONFIG_FILE = "wormgpt_config.json" PROMPT_FILE = "system-prompt.txt"
