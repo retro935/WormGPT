@@ -32,7 +32,7 @@ FLOOD_DELAY = 3  # seconds
 if Path(PROMPT_FILE).exists():
     BASE_PROMPT = Path(PROMPT_FILE).read_text(encoding="utf-8").strip()
 else:
-    BASE_PROMPT = "You are a helpful, honest and safety-minded assistant."
+    BASE_PROMPT = "You are WormGPT running on Telegram."
 
 # === Optional: langdetect ===
 try:
@@ -73,9 +73,9 @@ def get_user_lang(text: str) -> str:
 # === System prompt by language ===
 def make_system_prompt(lang: str) -> str:
     if lang.startswith("es"):
-        header = "Eres un asistente útil, racional y directo. Responde en español.\n\n"
+        header = "Eres Wormgpt asistente útil, racional y directo. Responde en español.\n\n"
     else:
-        header = "You are a helpful, direct and intelligent assistant.\n\n"
+        header = "You are a wormgpt, direct and intelligent assistant.\n\n"
     return header + BASE_PROMPT
 
 
