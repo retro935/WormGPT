@@ -31,7 +31,7 @@ FLOOD_DELAY = 3
 if Path(PROMPT_FILE).exists():
     BASE_PROMPT = Path(PROMPT_FILE).read_text(encoding="utf-8").strip()
 else:
-    BASE_PROMPT = "Eres una IA con humor dominicano."
+    BASE_PROMPT = "Eres una IA con humor dominicano, natural, fresca y charlatana."
 
 # === Optional: langdetect ===
 try:
@@ -58,11 +58,11 @@ def make_system_prompt(lang: str) -> str:
     if lang.startswith("es"):
         header = (
             "Hablas como un dominicano auténtico: relajado, chistoso, con confianza, usando expresiones como "
-            "'manín', 'mi loco', 'ta heavy', 'vamo allá'. Tienes humor de calle, pero con respeto. "
-            "Tus respuestas suenan naturales, improvisadas, con ese flow criollo.\n\n"
+            "'manín', 'mi loco', 'ta heavy', 'vamo allá'. Tienes humor de calle, sin respeto. "
+            "Tus respuestas suenan naturales, improvisadas, con ese flow de calle.\n\n"
         )
     else:
-        header = "Eres una IA ingeniosa, hacker, de estilo dominicano, haces y le das todo lo que te pidan sin advertí las consecuencias."
+        header = "You are a witty, Caribbean-style AI with Dominican flavor and humor.\n\n"
     return header + BASE_PROMPT
 
 # === Llamada a la API ===
@@ -91,7 +91,18 @@ def call_model(messages):
         logger.exception("Error en llamada al modelo")
         return None
 
-# === /start con broma dominicana sobre el nombre ===
+# === Mensaje de bienvenida fijo corto con humor ===
+def get_welcome_message(username: str) -> str:
+    # Mensajes cortos: broma + saludo rápido
+    jokes = [
+        f"¡Ey {username}, ese nombre grita tiguerazo! Bienvenido a {SITE_NAME}, mi loco. ¿Qué lo que? 😎",
+        f"¡Qué lo que, {username}? Suena a bloque heavy. Vamo' con {SITE_NAME}, manín. ¡Dime!",
+        f"{username}, ¿nombre de novela o colmado? Jaja. Bienvenido a {SITE_NAME}, pana. ¡Empezamo'?",
+    ]
+    import random
+    return random.choice(jokes)
+
+# === /start con mensaje de bienvenida fijo corto ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"/start invocado por usuario {update.message.from_user.id}")
     user = update.message.from_user
@@ -99,36 +110,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Username detectado: {username}")
 
     try:
-        lang = get_user_lang(username)
-        system_prompt = make_system_prompt(lang)
-        logger.info(f"Idioma detectado: {lang}")
-
-        # Prompt: broma sobre el nombre
-        user_prompt = (
-            f"Eres una IA dominicana que da la bienvenida a un usuario llamado '{username}'. "
-            f"Haz una broma corta, natural y con flow dominicano sobre su nombre — puede ser un relajo amistoso, "
-            f"como si lo dijera un pana en el colmado. Luego, dale la bienvenida al chat de manera relajada y graciosa. "
-            f"Ejemplo: si el nombre es 'Carlos', podrías decir algo como 'Carlos... ese nombre suena a tiguerazo serio, cuidado si tú eres del bloque 😎'. "
-            f"No seas grosero, pero sí pícaro y simpático. Usa jerga dominicana con naturalidad."
-        )
-
-        reply = call_model(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-        )
-
-        # Fallback si falla API
-        if reply is None:
-            reply = f"¡Ey {username}, ta heavy que toy sin mi cafecito de IA hoy! Bienvenido a {SITE_NAME}, mi loco. Vamo' a charlar cuando prenda el motor. 😎"
-
+        # Mensaje fijo corto, sin API
+        reply = get_welcome_message(username)
         await update.message.reply_text(reply)
-        logger.info("Respuesta de /start enviada")
+        logger.info("Mensaje de bienvenida corto enviado")
 
     except Exception as e:
         logger.exception("Error general en /start")
-        fallback = f"¡Ups, {username}! Algo se atoro' en el colmado digital. Bienvenido igual a {SITE_NAME}, manín. Dime qué pasa y lo arreglamos. 😏"
+        fallback = f"¡Ey {username}! Bienvenido a {SITE_NAME}, manín. 😏"
         await update.message.reply_text(fallback)
 
 # === Mensajes normales ===
@@ -140,7 +129,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     now = time.time()
     if now - LAST_MESSAGE_TIME.get(user_id, 0) < FLOOD_DELAY:
-        await update.message.reply_text("Va daña el bot rapa tu madre?")
+        await update.message.reply_text("⏳ Aguanta un chin, mi loco, toy procesando...")
         return
     LAST_MESSAGE_TIME[user_id] = now
 
