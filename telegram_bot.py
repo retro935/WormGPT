@@ -161,7 +161,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang_from_text(user_msg)
     system_prompt = make_system_prompt(lang)
 
-    thinking_msg = await update.message.reply_text("🔍 Razonando...")
+    thinking_msg = await update.message.reply_text("🔍")
 
     reply = call_model([
         {"role": "system", "content": system_prompt},
@@ -169,9 +169,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     try:
-        await thinking_msg.edit_text(f"🍳 {reply}")
+        await thinking_msg.edit_text(f"👹 {reply}")
     except Exception:
-        await update.message.reply_text(f"🍳 {reply}")
+        await update.message.reply_text(f"👹 {reply}")
 
 # === /setlang placeholder ===
 async def setlang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
