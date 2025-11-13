@@ -1,14 +1,8 @@
 services:
-  - type: docker
+  - type: web
     name: wormgpt-bot
-    env: docker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
     plan: free
-    envVars:
-      - key: TELEGRAM_TOKEN
-        sync: false
-      - key: MODEL_API_KEY
-        sync: false
-      - key: HF_TOKEN
-        sync: false
-      - key: LOG_CHANNEL_ID
-        sync: false
+    autoDeploy: true
