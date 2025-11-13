@@ -53,7 +53,7 @@ def send_log_to_channel(text: str):
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json={"chat_id": LOG_CHANNEL_ID, "text": text, "parse_mode": "Markdown"},
-            timeout=5,
+            timeout=5
         )
     except Exception:
         pass
@@ -62,11 +62,7 @@ def call_text_model(messages):
     if not MODEL_API_KEY:
         return "⚠️ Falta la API KEY del modelo."
     headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": "deepseek-ai/deepseek-v3.1-terminus",
-        "messages": messages,
-        "max_tokens": 512,
-    }
+    payload = {"model": "deepseek-ai/deepseek-v3.1-terminus", "messages": messages, "max_tokens": 512}
     try:
         r = requests.post(MODEL_URL, headers=headers, json=payload, timeout=60)
         if r.status_code == 200:
@@ -82,6 +78,7 @@ def edit_image_hf(image_url: str, prompt: str):
         return "❌ Falta HF_TOKEN."
     if not image_url.startswith("http"):
         return "⚠️ URL no válida."
+
     try:
         resp = requests.get(image_url, timeout=10)
         if resp.status_code != 200:
@@ -97,6 +94,7 @@ def edit_image_hf(image_url: str, prompt: str):
             json=payload,
             timeout=120,
         )
+
         if r.status_code == 200:
             return BytesIO(r.content)
         return f"⚠️ Error HF API ({r.status_code}): {r.text}"
@@ -126,7 +124,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     USER_HISTORY.setdefault(uid, []).append({"role": "user", "content": text})
     if len(USER_HISTORY[uid]) > HISTORY_LIMIT * 2:
-        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2 :]
+        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2:]
 
     if any(k in text.lower() for k in ["edita", "imagen", "foto"]) and "http" in text:
         parts = text.split()
@@ -146,39 +144,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-# ---------- FLASK + WEBHOOK ----------
+# ---------- FLASK + BOT ----------
 app = Flask(__name__)
 
 @app.route('/')
 def index():
     return "🤖 Bot WormGPT activo.", 200
 
-@app.route(f'/{TELEGRAM_TOKEN}', methods=["POST"])
-def telegram_webhook():
-    """Recibe las actualizaciones del bot vía webhook."""
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "OK", 200
+@app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
+def webhook():
+    """Recibe las actualizaciones de Telegram vía POST"""
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, application.bot)
+        application.update_queue.put_nowait(update)
+        return "OK", 200
+    except Exception as e:
+        logger.error(f"Error procesando update: {e}")
+        return "error", 500
 
-# ---------- BOT ----------
-application = Application.builder().token(TELEGRAM_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
+# ---------- INICIO ----------
 def run_bot():
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
-    if not render_url:
-        render_url = "https://wormgpt-n0jr.onrender.com"
+    global application
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
     webhook_url = f"{render_url}/{TELEGRAM_TOKEN}"
+
     logger.info(f"🌐 Configurando webhook en {webhook_url}")
-
-    # Configura el webhook automáticamente
-    resp = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
-    logger.info(f"Webhook respuesta: {resp.text}")
-
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(application.bot.set_webhook(webhook_url))
 
 if __name__ == "__main__":
-    import threading
-    threading.Thread(target=run_bot).start()
+    run_bot()
+    port = int(os.getenv("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
