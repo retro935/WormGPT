@@ -4,8 +4,8 @@ import base64
 import requests
 import logging
 from io import BytesIO
-from PIL import Image
 from pathlib import Path
+from PIL import Image
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,29 +15,61 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# === CONFIGURACIÓN ===
+# ---------- CONFIG ----------
 SITE_NAME = "WormGPT"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MODEL_API_KEY = os.getenv("MODEL_API_KEY")
-HF_TOKEN = os.getenv("HF_TOKEN")
+MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # endpoint API text model
+HF_TOKEN = os.getenv("HF_TOKEN")            # huggingface (opcional)
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")  # canal para logs (opcional)
 
-BASE_PROMPT = "Eres una IA directa, con sentido del humor y sin filtros. Responde con claridad y estilo natural."
 MODEL_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 HF_MODEL = "runwayml/stable-diffusion-inpainting"
 
-# === LOGGING ===
-logging.basicConfig(level=logging.INFO)
+# Load system prompt
+PROMPT_FILE = "system-prompt.txt"
+if Path(PROMPT_FILE).exists():
+    BASE_PROMPT = Path(PROMPT_FILE).read_text(encoding="utf-8").strip()
+else:
+    BASE_PROMPT = "Eres un asistente servicial y profesional. Responde en español."
+
+# ---------- LOGGING ----------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
+)
 logger = logging.getLogger(__name__)
 
-# === CONTROL DE MENSAJES ===
+# ---------- IN-MEMORY STATE ----------
 LAST_MESSAGE_TIME = {}
 FLOOD_DELAY = 2
 USER_HISTORY = {}
-HISTORY_LIMIT = 5
+HISTORY_LIMIT = 6
 
+# ---------- HELPERS ----------
+def send_log_to_channel(text: str):
+    """Envía texto al canal de logs si LOG_CHANNEL_ID está definido."""
+    if not LOG_CHANNEL_ID or not TELEGRAM_TOKEN:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": LOG_CHANNEL_ID, "text": text, "parse_mode": "Markdown"},
+            timeout=6
+        )
+    except Exception as e:
+        logger.debug(f"No se pudo enviar log: {e}")
 
-# === Llamada al modelo de texto ===
+def log_interaction(user, question, answer):
+    short = f"👤 *{user}*\n❓ {question}\n💬 {answer[:800]}"
+    logger.info(short)
+    send_log_to_channel(short)
+
 def call_text_model(messages):
+    """Llamada simple al endpoint de texto. Ajusta según tu proveedor."""
+    if not MODEL_API_KEY:
+        logger.warning("MODEL_API_KEY no configurada")
+        return "Lo siento, el servicio de IA no está disponible ahora."
     headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": "deepseek-ai/deepseek-v3.1-terminus", "messages": messages, "max_tokens": 512}
     try:
@@ -45,120 +77,97 @@ def call_text_model(messages):
         if r.status_code == 200:
             data = r.json()
             return data.get("choices", [{}])[0].get("message", {}).get("content", "Sin respuesta.")
-        else:
-            logger.error(f"Error API ({r.status_code}): {r.text}")
-            return "⚠️ El modelo no respondió correctamente."
+        logger.error(f"Error API ({r.status_code}): {r.text}")
+        return "⚠️ El modelo no respondió correctamente."
     except Exception as e:
         logger.exception("Error llamando al modelo:")
         return "❌ Error conectando con el modelo."
 
-
-# === Edición de imágenes con Hugging Face ===
 def edit_image_hf(image_url: str, prompt: str):
+    """Edición simple vía Hugging Face (si HF_TOKEN está disponible)."""
     if not HF_TOKEN:
-        return "❌ Falta HF_TOKEN. Agrega tu token de Hugging Face a las variables de entorno."
-
+        return "❌ Falta HF_TOKEN. Agrega tu token de Hugging Face."
     try:
-        # Descargar imagen original
-        img_resp = requests.get(image_url)
-        img_resp.raise_for_status()
-        image = Image.open(BytesIO(img_resp.content)).convert("RGB")
-
-        # Convertir imagen a base64 (HF espera files, pero Render no permite multipart grandes)
-        buffered = BytesIO()
-        image.save(buffered, format="PNG")
-        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        # Payload a Hugging Face
+        resp = requests.get(image_url, timeout=15)
+        resp.raise_for_status()
+        image = Image.open(BytesIO(resp.content)).convert("RGB")
+        buf = BytesIO()
+        image.save(buf, format="PNG")
+        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-        payload = {
-            "inputs": prompt,
-            "parameters": {"num_inference_steps": 30, "guidance_scale": 8.0},
-            "image": img_b64
-        }
-
-        resp = requests.post(f"https://api-inference.huggingface.co/models/{HF_MODEL}",
-                             headers=headers, json=payload, timeout=120)
-
-        if resp.status_code == 200:
-            edited_image = Image.open(BytesIO(resp.content))
-            buffer_out = BytesIO()
-            edited_image.save(buffer_out, format="PNG")
-            buffer_out.seek(0)
-            return buffer_out
-        else:
-            return f"⚠️ Error HF API ({resp.status_code}): {resp.text}"
-
+        payload = {"inputs": prompt, "image": img_b64}
+        r = requests.post(f"https://api-inference.huggingface.co/models/{HF_MODEL}",
+                           headers=headers, json=payload, timeout=120)
+        if r.status_code == 200:
+            edited = Image.open(BytesIO(r.content))
+            out = BytesIO()
+            edited.save(out, format="PNG")
+            out.seek(0)
+            return out
+        return f"⚠️ Error HF API ({r.status_code}): {r.text}"
     except Exception as e:
         logger.exception("Error en edición de imagen:")
         return f"❌ Error editando imagen: {e}"
 
-
-# === COMANDOS ===
+# ---------- HANDLERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    username = user.first_name or user.username or "compa"
-    await update.message.reply_text(
-        f"🔥 ¡Qué lo qué, {username}! Bienvenido a *{SITE_NAME}* 🚀\n"
-        f"Tu IA freca: responde texto y también edita imágenes.\n\n"
-        f"Ejemplo:\n"
-        f"`edita esta imagen cambiando el fondo a playa`\n seguido de una URL de imagen 🌴",
-        parse_mode="Markdown",
-    )
+    user = update.effective_user
+    name = user.first_name or user.username or "compa"
+    greeting = f"🔥 ¡Qué lo qué, {name}! Bienvenido a *{SITE_NAME}* 🚀\n" \
+               f"Soy Fraudix: tengo lengua filosa, pero aquí no doy manuales para hacer daño. 😈"
+    await update.message.reply_text(greeting, parse_mode="Markdown")
+    send_log_to_channel(f"🟢 /start por {name} ({user.id})")
 
-
-# === MENSAJES ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    user_id = user.id
-    user_msg = update.message.text or ""
+    user = update.effective_user
+    uid = user.id
+    text = (update.message.text or "").strip()
+    if not text:
+        return
 
     now = time.time()
-    if now - LAST_MESSAGE_TIME.get(user_id, 0) < FLOOD_DELAY:
-        await update.message.reply_text("⏳ Espera un momento, toy pensando...")
+    if now - LAST_MESSAGE_TIME.get(uid, 0) < FLOOD_DELAY:
+        await update.message.reply_text("⏳ Espera un momento, toy procesando...")
         return
-    LAST_MESSAGE_TIME[user_id] = now
+    LAST_MESSAGE_TIME[uid] = now
 
-    if user_id not in USER_HISTORY:
-        USER_HISTORY[user_id] = []
-    USER_HISTORY[user_id].append({"role": "user", "content": user_msg})
+    USER_HISTORY.setdefault(uid, []).append({"role": "user", "content": text})
+    # Keep last messages length-limited
+    if len(USER_HISTORY[uid]) > HISTORY_LIMIT * 2:
+        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2 :]
 
-    # Detecta si hay URL e intención de editar
-    if any(k in user_msg.lower() for k in ["edita", "editar", "imagen", "foto", "image"]) and "http" in user_msg:
-        parts = user_msg.split()
+    # detect image-edit intent + URL
+    if any(k in text.lower() for k in ["edita", "editar", "imagen", "foto", "image"]) and "http" in text:
+        parts = text.split()
         image_url = next((p for p in parts if p.startswith("http")), None)
-        edit_prompt = user_msg.replace(image_url, "").strip()
-        await update.message.reply_text("🎨 Editando imagen, dame un momento...")
-        edited = edit_image_hf(image_url, edit_prompt)
-        if isinstance(edited, BytesIO):
-            await update.message.reply_photo(photo=edited, caption="🖼️ Imagen editada por IA")
+        prompt = text.replace(image_url or "", "").strip()
+        await update.message.reply_text("🎨 Editando imagen... un momento.")
+        result = edit_image_hf(image_url, prompt)
+        if isinstance(result, BytesIO):
+            await update.message.reply_photo(photo=result, caption="🖼️ Imagen editada")
+            send_log_to_channel(f"🖼️ Edit request by {user.first_name}: {text}")
         else:
-            await update.message.reply_text(str(edited))
+            await update.message.reply_text(str(result))
         return
 
-    # Texto normal
-    thinking = await update.message.reply_text("🔍 Pensando...")
-    history = USER_HISTORY[user_id][-HISTORY_LIMIT * 2 :]
-    messages = [{"role": "system", "content": BASE_PROMPT}] + history
+    # Build messages for the model: system prompt + history + user
+    history = USER_HISTORY[uid][-HISTORY_LIMIT * 10:]
+    messages = [{"role": "system", "content": BASE_PROMPT}] + history + [{"role": "user", "content": text}]
+
+    await update.message.reply_text("🔍")
     reply = call_text_model(messages)
-
     await update.message.reply_text(reply)
-    try:
-        await thinking.delete()
-    except:
-        pass
+    USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-    USER_HISTORY[user_id].append({"role": "assistant", "content": reply})
-    if len(USER_HISTORY[user_id]) > HISTORY_LIMIT * 2:
-        USER_HISTORY[user_id] = USER_HISTORY[user_id][-HISTORY_LIMIT * 2:]
+    # log
+    log_interaction(user.first_name or user.username or str(uid), text, reply)
 
-
-# === EJECUCIÓN ===
+# ---------- RUN ----------
 def run_bot():
     if not TELEGRAM_TOKEN:
         raise RuntimeError("❌ Falta TELEGRAM_TOKEN en las variables de entorno.")
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    logger.info("🚀 Bot Telegram corriendo y listo para texto + edición de imágenes.")
+    logger.info("🚀 Bot Telegram corriendo y listo para responder.")
     app.run_polling()
