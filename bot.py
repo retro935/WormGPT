@@ -1,18 +1,20 @@
-# bot.py — versión final para Render (con fake server y system-prompt.txt)
+# bot.py — versión final sincronizada (Render + bienvenida hacker + respuesta corta/larga)
 import os
 import time
+import random
 import logging
 import requests
 import threading
 import http.server
 import socketserver
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # ---------------- CONFIG ----------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # clave del modelo remoto
-LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")  # opcional: canal para logs
+MODEL_API_KEY = os.getenv("MODEL_API_KEY")
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")
 
 # ---------------- LOGGING ----------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -20,24 +22,26 @@ logger = logging.getLogger("wormgpt")
 
 # ---------------- ESTADO ----------------
 LAST_MESSAGE_TIME = {}
-FLOOD_DELAY = 15  # segundos entre mensajes
+FLOOD_DELAY = 15
 USER_HISTORY = {}
 HISTORY_LIMIT = 6
 
 # ---------------- PROMPT DEL SISTEMA ----------------
 def load_system_prompt():
-    """Carga el prompt desde system-prompt.txt si existe."""
     try:
         with open("system-prompt.txt", "r", encoding="utf-8") as f:
             return f.read().strip()
     except FileNotFoundError:
-        return "eres un asistente útil, conciso y sin filtro 😈. Y sí, soy el rey del carding, bro. Si necesitas algo, aquí estoy. 💳🔥"
+        return (
+            "Eres un asistente técnico breve, directo y profesional. "
+            "Da respuestas cortas por defecto. Si el usuario pide mucha información o dice algo como "
+            "'explícame a fondo', 'detallado', 'paso a paso' o 'versión larga', entonces da una respuesta extensa."
+        )
 
 SYSTEM_PROMPT = load_system_prompt()
 
 # ---------------- HELPERS ----------------
 def send_log_to_channel(text: str):
-    """Envía texto al canal de logs (si está configurado)."""
     if not LOG_CHANNEL_ID or not TELEGRAM_TOKEN:
         return
     try:
@@ -50,13 +54,10 @@ def send_log_to_channel(text: str):
         logger.debug(f"No se pudo enviar log: {e}")
 
 def call_text_model(messages):
-    """Llama al modelo remoto o hace eco si no hay API."""
     if not MODEL_API_KEY:
-        user_text = messages[-1].get("content", "")
-        return f"Echo: {user_text}"
-
+        return f"Echo: {messages[-1].get('content', '')}"
     try:
-        url = "https://integrate.api.nvidia.com/v1/chat/completions"  # endpoint
+        url = "https://integrate.api.nvidia.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
         payload = {
             "model": "deepseek-ai/deepseek-v3.1-terminus",
@@ -77,11 +78,37 @@ def call_text_model(messages):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name or user.username or "compa"
-    text = (
-        f"🔥 Kloq, {name}! Bienvenido.\n\n"
-        "Estoy activo. Escribe lo que quieras y te respondo usando el modelo remoto."
+
+    # 🎭 Stickers hacker (puedes añadir más)
+    hacker_stickers = [
+        "CAACAgEAAxkBAAE9zB9pFkOMb_-sMrVy658qUeF9Papp_AACEgUAAkpOqEYkPgc0t0i53jYE",  # tu sticker hacker
+    ]
+    sticker_id = random.choice(hacker_stickers)
+
+    # Enviar sticker
+    sticker_msg = await update.message.reply_sticker(sticker=sticker_id)
+
+    # ⏳ Efecto progresivo visual (3..2..1)
+    countdown = await update.message.reply_text("3️⃣")
+    for step in ["2️⃣", "1️⃣"]:
+        await asyncio.sleep(0.7)
+        await countdown.edit_text(step)
+    await asyncio.sleep(0.6)
+
+    # 💬 Bienvenida moderna (mientras borra los anteriores)
+    welcome_text = (
+        f"👋 ¡Hola {name}!\n\n"
+        "💻 Bienvenido al bot — totalmente operativo y listo para asistirte. "
+        "Pide código, ideas o información técnica y te respondo en segundos ⚡"
     )
-    await update.message.reply_text(text)
+
+    # Borrar al mismo tiempo
+    await asyncio.gather(
+        sticker_msg.delete(),
+        countdown.delete(),
+        update.message.reply_text(welcome_text, parse_mode="Markdown"),
+    )
+
     send_log_to_channel(f"🟢 /start por {name} ({user.id})")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -107,11 +134,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         + [{"role": "user", "content": user_msg}]
     )
 
-    thinking = await update.message.reply_text("🔍")
+    thinking = await update.message.reply_text("💭 Pensando...")
     reply = call_text_model(messages)
-    await thinking.edit_text(reply)
-    USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
+    if "```" in reply:
+        await thinking.edit_text(reply, parse_mode="Markdown")
+    else:
+        await thinking.edit_text(reply)
+
+    USER_HISTORY[uid].append({"role": "assistant", "content": reply})
     send_log_to_channel(f"👤 {user.first_name or user.username}:\n❓ {user_msg}\n💬 {reply[:500]}")
 
 # ---------------- RUN ----------------
