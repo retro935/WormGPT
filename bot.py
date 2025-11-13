@@ -5,7 +5,7 @@ import requests
 import logging
 from io import BytesIO
 from pathlib import Path
-from flask import Flask, request
+from flask import Flask
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -53,7 +53,7 @@ def send_log_to_channel(text: str):
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json={"chat_id": LOG_CHANNEL_ID, "text": text, "parse_mode": "Markdown"},
-            timeout=5
+            timeout=5,
         )
     except Exception:
         pass
@@ -62,7 +62,11 @@ def call_text_model(messages):
     if not MODEL_API_KEY:
         return "⚠️ Falta la API KEY del modelo."
     headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": "deepseek-ai/deepseek-v3.1-terminus", "messages": messages, "max_tokens": 512}
+    payload = {
+        "model": "deepseek-ai/deepseek-v3.1-terminus",
+        "messages": messages,
+        "max_tokens": 512,
+    }
     try:
         r = requests.post(MODEL_URL, headers=headers, json=payload, timeout=60)
         if r.status_code == 200:
@@ -138,41 +142,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(str(result))
         return
 
-    messages = [{"role": "system", "content": BASE_PROMPT}] + USER_HISTORY[uid][-HISTORY_LIMIT:] + [{"role": "user", "content": text}]
+    messages = (
+        [{"role": "system", "content": BASE_PROMPT}]
+        + USER_HISTORY[uid][-HISTORY_LIMIT:]
+        + [{"role": "user", "content": text}]
+    )
+
     await update.message.reply_text("🔍")
     reply = call_text_model(messages)
     await update.message.reply_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-# ---------- WEBHOOK SETUP ----------
+# ---------- FLASK + WEBHOOK ----------
 app = Flask(__name__)
-application = None
 
 @app.route('/')
-def home():
-    return "🤖 WormGPT bot activo por webhooks.", 200
-
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put(update)
-    return "OK", 200
+def index():
+    return "🤖 Bot WormGPT activo.", 200
 
 def run_bot():
-    global application
     port = int(os.getenv("PORT", 10000))
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "").replace("https://wormgpt-n0jr.onrender.com")
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "https://wormgpt-n0jr.onrender.com")
 
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Configurando webhook...")
+    logger.info(f"🌐 Configurando webhook en {render_url}/{TELEGRAM_TOKEN}")
     application.run_webhook(
         listen="0.0.0.0",
         port=port,
         url_path=TELEGRAM_TOKEN,
-        webhook_url=f"https://{render_url}/{TELEGRAM_TOKEN}",
+        webhook_url=f"{render_url}/{TELEGRAM_TOKEN}",
     )
 
 if __name__ == "__main__":
