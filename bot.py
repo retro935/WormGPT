@@ -1,11 +1,22 @@
 import os
+import sys
 import time
 import base64
 import requests
 import logging
+import subprocess
 from io import BytesIO
 from pathlib import Path
-from PIL import Image
+
+# ====== INSTALACIÓN DINÁMICA DE PILLOW ======
+try:
+    from PIL import Image
+except ImportError:
+    print("🧩 Pillow no encontrado. Instalando dinámicamente...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow==9.5.0"])
+    from PIL import Image
+# ============================================
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
