@@ -1,7 +1,9 @@
-python-telegram-bot==20.7  # Pa' el bot
+python-telegram-bot==20.7
 requests==2.31.0
-langdetect==1.0.9
-Pillow==10.1.0  # ← Esto fixea el PIL error
-diffusers==0.25.0  # Pa' Hugging Face (opcional si usas API pura)
-transformers==4.36.0  # Si usas local models
-torch==2.1.0  # Si usas local (opcional)
+langdetect==1.0.9  # Si lo necesitas; si no, quítalo pa' optional
+Pillow==10.1.0
+diffusers==0.25.0  # Opcional si usas API pura
+transformers==4.36.0  # Opcional
+torch==2.1.0  # Opcional, solo si local models
+setuptools==70.0.0  # Agrega pa' fixear metadata
+wheel==0.43.0  # Pa' builds suaves
