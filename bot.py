@@ -92,7 +92,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = [{"role": "system", "content": "Eres un asistente conciso y claro."}] + USER_HISTORY[uid][-HISTORY_LIMIT:] + [{"role": "user", "content": user_msg}]
 
     # feedback al usuario
-    thinking = await update.message.reply_text("🔍 Pensando...")
+    thinking = await update.message.reply_text("🔍")
 
     # llama al modelo o eco
     reply = call_text_model(messages)
