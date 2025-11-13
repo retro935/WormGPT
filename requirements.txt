@@ -1,6 +1,5 @@
 python-telegram-bot==20.7
 requests==2.31.0
-Pillow==10.1.0  # Fix para PIL
-langdetect==1.0.9  # Si lo necesitas; si falla, quítalo (código lo maneja optional)
-setuptools==70.0.0  # Fix para metadata '__version__'
+Pillow==10.1.0
+setuptools==70.0.0  # Fix pa' metadata
 wheel==0.43.0  # Pa' builds suaves
