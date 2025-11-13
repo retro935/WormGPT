@@ -21,10 +21,11 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 MODEL_API_KEY = os.getenv("MODEL_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")
+
 MODEL_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 HF_MODEL = "runwayml/stable-diffusion-inpainting"
 
-# ---------- PROMPT ----------
+# ---------- PROMPT BASE ----------
 PROMPT_FILE = "system-prompt.txt"
 if Path(PROMPT_FILE).exists():
     BASE_PROMPT = Path(PROMPT_FILE).read_text(encoding="utf-8").strip()
@@ -32,7 +33,10 @@ else:
     BASE_PROMPT = "Eres un asistente servicial y profesional. Responde en español."
 
 # ---------- LOGGING ----------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 # ---------- ESTADO ----------
@@ -42,20 +46,21 @@ USER_HISTORY = {}
 HISTORY_LIMIT = 6
 
 # ---------- FUNCIONES ----------
-def send_log(text: str):
+def send_log_to_channel(text: str):
     if not LOG_CHANNEL_ID or not TELEGRAM_TOKEN:
         return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": LOG_CHANNEL_ID, "text": text},
+            json={"chat_id": LOG_CHANNEL_ID, "text": text, "parse_mode": "Markdown"},
             timeout=5,
         )
     except Exception:
         pass
 
-
 def call_text_model(messages):
+    if not MODEL_API_KEY:
+        return "⚠️ Falta la API KEY del modelo."
     headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "deepseek-ai/deepseek-v3.1-terminus",
@@ -72,13 +77,11 @@ def call_text_model(messages):
         logger.error(f"Error conectando con el modelo: {e}")
         return "❌ Error al conectar con el modelo."
 
-
 def edit_image_hf(image_url: str, prompt: str):
     if not HF_TOKEN:
         return "❌ Falta HF_TOKEN."
     if not image_url.startswith("http"):
         return "⚠️ URL no válida."
-
     try:
         resp = requests.get(image_url, timeout=10)
         if resp.status_code != 200:
@@ -94,13 +97,11 @@ def edit_image_hf(image_url: str, prompt: str):
             json=payload,
             timeout=120,
         )
-
         if r.status_code == 200:
             return BytesIO(r.content)
         return f"⚠️ Error HF API ({r.status_code}): {r.text}"
     except Exception as e:
         return f"❌ Error editando imagen: {e}"
-
 
 # ---------- HANDLERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,8 +109,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = user.first_name or user.username or "compa"
     msg = f"🔥 ¡Qué lo qué, {name}! Bienvenido a *{SITE_NAME}* 🚀\nSoy Fraudix, pero tranquilo, aquí no hacemos líos. 😎"
     await update.message.reply_text(msg, parse_mode="Markdown")
-    send_log(f"🟢 /start por {name} ({user.id})")
-
+    send_log_to_channel(f"🟢 /start por {name} ({user.id})")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -126,7 +126,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     USER_HISTORY.setdefault(uid, []).append({"role": "user", "content": text})
     if len(USER_HISTORY[uid]) > HISTORY_LIMIT * 2:
-        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2:]
+        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2 :]
 
     if any(k in text.lower() for k in ["edita", "imagen", "foto"]) and "http" in text:
         parts = text.split()
@@ -140,40 +140,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(str(result))
         return
 
-    messages = (
-        [{"role": "system", "content": BASE_PROMPT}]
-        + USER_HISTORY[uid][-HISTORY_LIMIT:]
-        + [{"role": "user", "content": text}]
-    )
-
+    messages = [{"role": "system", "content": BASE_PROMPT}] + USER_HISTORY[uid][-HISTORY_LIMIT:] + [{"role": "user", "content": text}]
     await update.message.reply_text("🔍")
     reply = call_text_model(messages)
     await update.message.reply_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-
-# ---------- FLASK + TELEGRAM ----------
+# ---------- FLASK + WEBHOOK ----------
 app = Flask(__name__)
-application = Application.builder().token(TELEGRAM_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-@app.route("/")
-def home():
+@app.route('/')
+def index():
     return "🤖 Bot WormGPT activo.", 200
 
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
+@app.route(f'/{TELEGRAM_TOKEN}', methods=["POST"])
+def telegram_webhook():
+    """Recibe las actualizaciones del bot vía webhook."""
     update = Update.de_json(request.get_json(force=True), application.bot)
     application.update_queue.put_nowait(update)
     return "OK", 200
 
+# ---------- BOT ----------
+application = Application.builder().token(TELEGRAM_TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+def run_bot():
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+    if not render_url:
+        render_url = "https://wormgpt-n0jr.onrender.com"
+
+    webhook_url = f"{render_url}/{TELEGRAM_TOKEN}"
+    logger.info(f"🌐 Configurando webhook en {webhook_url}")
+
+    # Configura el webhook automáticamente
+    resp = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
+    logger.info(f"Webhook respuesta: {resp.text}")
+
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 10000))
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "https://wormgpt-n0jr.onrender.com")
-
-    logger.info(f"🌐 Configurando webhook en {render_url}/{TELEGRAM_TOKEN}")
-    application.bot.set_webhook(f"{render_url}/{TELEGRAM_TOKEN}")
-
-    app.run(host="0.0.0.0", port=port)
+    import threading
+    threading.Thread(target=run_bot).start()
