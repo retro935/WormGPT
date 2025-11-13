@@ -1,22 +1,10 @@
 import os
-import sys
 import time
 import base64
 import requests
 import logging
-import subprocess
 from io import BytesIO
 from pathlib import Path
-
-# ====== INSTALACIÓN DINÁMICA DE PILLOW ======
-try:
-    from PIL import Image
-except ImportError:
-    print("🧩 Pillow no encontrado. Instalando dinámicamente...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow==9.5.0"])
-    from PIL import Image
-# ============================================
-
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -29,9 +17,9 @@ from telegram.ext import (
 # ---------- CONFIG ----------
 SITE_NAME = "WormGPT"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # API del modelo
-HF_TOKEN = os.getenv("HF_TOKEN")            # Token de Hugging Face (opcional)
-LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")  # Canal de logs opcional
+MODEL_API_KEY = os.getenv("MODEL_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")
 
 MODEL_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 HF_MODEL = "runwayml/stable-diffusion-inpainting"
@@ -59,7 +47,6 @@ HISTORY_LIMIT = 6
 
 # ---------- FUNCIONES ----------
 def send_log_to_channel(text: str):
-    """Envía logs al canal si está configurado."""
     if not LOG_CHANNEL_ID or not TELEGRAM_TOKEN:
         return
     try:
@@ -68,16 +55,10 @@ def send_log_to_channel(text: str):
             json={"chat_id": LOG_CHANNEL_ID, "text": text, "parse_mode": "Markdown"},
             timeout=5
         )
-    except Exception as e:
-        logger.debug(f"No se pudo enviar log: {e}")
-
-def log_interaction(user, question, answer):
-    short = f"👤 *{user}*\n❓ {question}\n💬 {answer[:800]}"
-    logger.info(short)
-    send_log_to_channel(short)
+    except Exception:
+        pass
 
 def call_text_model(messages):
-    """Llama al modelo de texto remoto."""
     if not MODEL_API_KEY:
         return "⚠️ Falta la API KEY del modelo."
     headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
@@ -93,26 +74,34 @@ def call_text_model(messages):
         return "❌ Error al conectar con el modelo."
 
 def edit_image_hf(image_url: str, prompt: str):
-    """Usa Hugging Face para edición de imágenes."""
+    """Edita una imagen usando Hugging Face Inference API."""
     if not HF_TOKEN:
-        return "❌ Falta HF_TOKEN."
+        return "❌ Falta HF_TOKEN en las variables de entorno."
+    if not image_url.startswith("http"):
+        return "⚠️ URL de imagen no válida."
+
     try:
         resp = requests.get(image_url, timeout=10)
-        image = Image.open(BytesIO(resp.content)).convert("RGB")
-        buf = BytesIO()
-        image.save(buf, format="PNG")
-        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        if resp.status_code != 200:
+            return f"⚠️ No se pudo obtener la imagen ({resp.status_code})."
+
+        img_b64 = base64.b64encode(resp.content).decode("utf-8")
         headers = {"Authorization": f"Bearer {HF_TOKEN}"}
         payload = {"inputs": prompt, "image": img_b64}
-        r = requests.post(f"https://api-inference.huggingface.co/models/{HF_MODEL}", headers=headers, json=payload, timeout=120)
+
+        r = requests.post(
+            f"https://api-inference.huggingface.co/models/{HF_MODEL}",
+            headers=headers,
+            json=payload,
+            timeout=120,
+        )
+
         if r.status_code == 200:
-            edited = Image.open(BytesIO(r.content))
-            out = BytesIO()
-            edited.save(out, format="PNG")
-            out.seek(0)
-            return out
+            return BytesIO(r.content)
         return f"⚠️ Error HF API ({r.status_code}): {r.text}"
+
     except Exception as e:
+        logger.error(f"Error editando imagen: {e}")
         return f"❌ Error editando imagen: {e}"
 
 # ---------- HANDLERS ----------
@@ -138,31 +127,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     USER_HISTORY.setdefault(uid, []).append({"role": "user", "content": text})
     if len(USER_HISTORY[uid]) > HISTORY_LIMIT * 2:
-        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2 :]
+        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2:]
 
-    # Si detecta imagen
-    if any(k in text.lower() for k in ["edita", "editar", "imagen", "foto", "image"]) and "http" in text:
+    if any(k in text.lower() for k in ["edita", "imagen", "foto"]) and "http" in text:
         parts = text.split()
         image_url = next((p for p in parts if p.startswith("http")), None)
         prompt = text.replace(image_url or "", "").strip()
-        await update.message.reply_text("🎨 Editando imagen...")
+        await update.message.reply_text("🎨 Procesando imagen con Hugging Face...")
         result = edit_image_hf(image_url, prompt)
         if isinstance(result, BytesIO):
-            await update.message.reply_photo(photo=result, caption="🖼️ Imagen editada")
-            send_log_to_channel(f"🖼️ Edit request by {user.first_name}: {text}")
+            await update.message.reply_photo(photo=result, caption="🖼️ Imagen editada 🔥")
+            send_log_to_channel(f"🖼️ Edición de imagen por {user.first_name}: {text}")
         else:
             await update.message.reply_text(str(result))
         return
 
-    # Construye el contexto para el modelo
-    history = USER_HISTORY[uid][-HISTORY_LIMIT * 10:]
-    messages = [{"role": "system", "content": BASE_PROMPT}] + history + [{"role": "user", "content": text}]
-
+    messages = [{"role": "system", "content": BASE_PROMPT}] + USER_HISTORY[uid][-HISTORY_LIMIT * 2:] + [{"role": "user", "content": text}]
     await update.message.reply_text("🔍")
     reply = call_text_model(messages)
     await update.message.reply_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
-    log_interaction(user.first_name or user.username or str(uid), text, reply)
 
 # ---------- MAIN ----------
 def run_bot():
