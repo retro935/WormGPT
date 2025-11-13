@@ -1,5 +1,0 @@
-[build]
-nixpacks = true
-
-[deploy]
-start = "python main.py"
