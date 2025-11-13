@@ -161,7 +161,7 @@ def webhook():
 def run_bot():
     global application
     port = int(os.getenv("PORT", 10000))
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "").replace("https://", "")
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").replace("https://wormgpt-n0jr.onrender.com")
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
