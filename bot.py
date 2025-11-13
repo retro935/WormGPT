@@ -1,18 +1,18 @@
-# bot.py — Usa system-prompt.txt como prompt base
+# bot.py — versión final para Render (con fake server y system-prompt.txt)
 import os
 import time
 import logging
 import requests
+import threading
+import http.server
+import socketserver
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # ---------------- CONFIG ----------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MODEL_API_KEY = os.getenv("MODEL_API_KEY")
-LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")  # opcional
-
-if not MODEL_API_KEY:
-    raise RuntimeError("❌ Falta MODEL_API_KEY. Configúrala en las variables de entorno.")
+MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # clave del modelo remoto
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")  # opcional: canal para logs
 
 # ---------------- LOGGING ----------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -20,21 +20,18 @@ logger = logging.getLogger("wormgpt")
 
 # ---------------- ESTADO ----------------
 LAST_MESSAGE_TIME = {}
-FLOOD_DELAY = 2  # segundos entre mensajes por usuario
+FLOOD_DELAY = 2  # segundos entre mensajes
 USER_HISTORY = {}
 HISTORY_LIMIT = 6
 
-# ---------------- PROMPT SYSTEM ----------------
+# ---------------- PROMPT DEL SISTEMA ----------------
 def load_system_prompt():
-    """Carga prompt base desde system-prompt.txt (si existe)."""
-    path = "system-prompt.txt"
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            base = f.read().strip()
-            logger.info("📜 system-prompt.txt cargado correctamente.")
-            return base
-    logger.warning("⚠️ No se encontró system-prompt.txt, usando prompt por defecto.")
-    return "Eres un asistente técnico, directo y conciso."
+    """Carga el prompt desde system-prompt.txt si existe."""
+    try:
+        with open("system-prompt.txt", "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "Eres un asistente útil, conciso y directo."
 
 SYSTEM_PROMPT = load_system_prompt()
 
@@ -53,27 +50,29 @@ def send_log_to_channel(text: str):
         logger.debug(f"No se pudo enviar log: {e}")
 
 def call_text_model(messages):
-    """Llama siempre al modelo remoto."""
+    """Llama al modelo remoto o hace eco si no hay API."""
+    if not MODEL_API_KEY:
+        user_text = messages[-1].get("content", "")
+        return f"Echo: {user_text}"
+
     try:
-        url = "https://integrate.api.nvidia.com/v1/chat/completions"
+        url = "https://integrate.api.nvidia.com/v1/chat/completions"  # endpoint
         headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
         payload = {
             "model": "deepseek-ai/deepseek-v3.1-terminus",
             "messages": messages,
-            "max_tokens": 512
+            "max_tokens": 512,
         }
-        r = requests.post(url, headers=headers, json=payload, timeout=45)
+        r = requests.post(url, headers=headers, json=payload, timeout=30)
         if r.status_code == 200:
             data = r.json()
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "Sin respuesta del modelo.")
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "Sin respuesta.")
         else:
             logger.error(f"Error modelo ({r.status_code}): {r.text}")
-            return f"⚠️ Error del modelo ({r.status_code})."
-    except requests.exceptions.ReadTimeout:
-        return "⏳ El modelo tardó demasiado en responder. Intenta de nuevo."
+            return "⚠️ El modelo no respondió correctamente."
     except Exception as e:
-        logger.exception("Error llamando al modelo:")
-        return f"❌ Error conectando con el modelo: {e}"
+        logger.exception("Error conectando con el modelo:")
+        return "❌ Error conectando con el modelo."
 
 # ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -81,10 +80,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = user.first_name or user.username or "compa"
     text = (
         f"🔥 ¡Qué lo qué, {name}! Bienvenido.\n\n"
-        "Este bot usa *system-prompt.txt* como base y se conecta directamente al modelo remoto.\n"
-        "Escribe lo que quieras para probar."
+        "Estoy activo. Escribe lo que quieras y te respondo usando el modelo remoto."
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text)
     send_log_to_channel(f"🟢 /start por {name} ({user.id})")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,45 +92,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user_msg:
         return
 
-    # anti-flood
     now = time.time()
     if now - LAST_MESSAGE_TIME.get(uid, 0) < FLOOD_DELAY:
-        await update.message.reply_text("⏳ Espera un momento, procesando...")
+        await update.message.reply_text("⏳ Espera un momento, estoy pensando...")
         return
     LAST_MESSAGE_TIME[uid] = now
 
-    # historial
     USER_HISTORY.setdefault(uid, []).append({"role": "user", "content": user_msg})
     if len(USER_HISTORY[uid]) > HISTORY_LIMIT * 2:
-        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2:]
+        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2 :]
 
-    # armar conversación
     messages = (
         [{"role": "system", "content": SYSTEM_PROMPT}]
         + USER_HISTORY[uid][-HISTORY_LIMIT:]
         + [{"role": "user", "content": user_msg}]
     )
 
-    thinking = await update.message.reply_text("💭")
-
-    # llamada al modelo
+    thinking = await update.message.reply_text("🔍 Pensando...")
     reply = call_text_model(messages)
-
     await thinking.edit_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-    # log
     send_log_to_channel(f"👤 {user.first_name or user.username}:\n❓ {user_msg}\n💬 {reply[:500]}")
 
 # ---------------- RUN ----------------
 def run_bot():
     if not TELEGRAM_TOKEN:
-        raise RuntimeError("❌ Falta TELEGRAM_TOKEN.")
+        raise RuntimeError("❌ Falta TELEGRAM_TOKEN en variables de entorno.")
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    logger.info("🚀 Bot conectado al modelo remoto con system-prompt.txt (polling)...")
+    logger.info("🚀 Bot arrancando (polling)...")
     app.run_polling()
 
+# ---------------- FAKE SERVER PARA RENDER ----------------
+def fake_server():
+    PORT = int(os.environ.get("PORT", 8080))
+    Handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        logger.info(f"🌀 Fake server listening on port {PORT}")
+        httpd.serve_forever()
+
 if __name__ == "__main__":
+    threading.Thread(target=fake_server, daemon=True).start()
     run_bot()
