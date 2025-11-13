@@ -11,7 +11,7 @@ services:
     startCommand: "python main.py"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.13  # 🔥 Evita Python 3.13 (causa del KeyError '__version__')
+        value: 3.11.9  # 🔥 Evita Python 3.13 (causa del KeyError '__version__')
       - key: HF_TOKEN
         value: ${HF_TOKEN}
       - key: TELEGRAM_TOKEN
