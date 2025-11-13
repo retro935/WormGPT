@@ -1,9 +1,7 @@
 python-telegram-bot==20.7
 requests==2.31.0
-langdetect==1.0.9  # Si lo necesitas; si no, quítalo pa' optional
-Pillow==10.1.0
-diffusers==0.25.0  # Opcional si usas API pura
-transformers==4.36.0  # Opcional
-torch==2.1.0  # Opcional, solo si local models
-setuptools==70.0.0  # Agrega pa' fixear metadata
+Pillow==10.1.0  # Fix para PIL
+langdetect==1.0.9  # Si lo necesitas; si falla, quítalo (código lo maneja optional)
+setuptools==70.0.0  # Fix para metadata '__version__'
 wheel==0.43.0  # Pa' builds suaves
+--no-cache-dir  # Opcional: Evita cache roto
