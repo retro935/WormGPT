@@ -1,100 +1,118 @@
+# bot.py — Versión simple (sin edición de imágenes)
 import os
+import time
 import logging
-import threading
-import asyncio
-from flask import Flask, request
+import requests
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-import httpx  # Usamos HF API directamente sin Pillow ni extras.
-
-# ───────────────────────────────────────────────────────────────
-# CONFIGURACIÓN DE LOGS
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-# ───────────────────────────────────────────────────────────────
-# VARIABLES DE ENTORNO
+# ---------------- CONFIG ----------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-HF_TOKEN = os.getenv("HF_TOKEN")
-PORT = int(os.getenv("PORT", "10000"))
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://wormgpt-n0jr.onrender.com")
+MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # opcional: si lo pones, se llamará al modelo remoto
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")  # opcional: canal para logs (chat_id)
 
-# ───────────────────────────────────────────────────────────────
-# FLASK APP (para mantener el contenedor activo en Render)
-app = Flask(__name__)
+# ---------------- LOGGING ----------------
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("wormgpt")
 
-@app.route("/", methods=["GET", "HEAD"])
-def home():
-    return "✅ Bot activo y escuchando", 200
+# ---------------- ESTADO ----------------
+LAST_MESSAGE_TIME = {}
+FLOOD_DELAY = 2  # segundos entre mensajes por usuario
+USER_HISTORY = {}
+HISTORY_LIMIT = 6
 
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "OK", 200
+# ---------------- HELPERS ----------------
+def send_log_to_channel(text: str):
+    """Envía texto al canal de logs (si está configurado)."""
+    if not LOG_CHANNEL_ID or not TELEGRAM_TOKEN:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": LOG_CHANNEL_ID, "text": text, "parse_mode": "Markdown"},
+            timeout=5,
+        )
+    except Exception as e:
+        logger.debug(f"No se pudo enviar log: {e}")
 
-# ───────────────────────────────────────────────────────────────
-# FUNCIONES DEL BOT
+def call_text_model(messages):
+    """Llamada simple al endpoint de texto si MODEL_API_KEY está configurada.
+       Si no, devuelve un eco (útil para pruebas)."""
+    if not MODEL_API_KEY:
+        # Respuesta de fallback (eco corto)
+        user_text = messages[-1].get("content", "")
+        return f"Echo: {user_text}"
+    try:
+        url = "https://integrate.api.nvidia.com/v1/chat/completions"  # o cambia por tu endpoint
+        headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
+        payload = {"model": "deepseek-ai/deepseek-v3.1-terminus", "messages": messages, "max_tokens": 512}
+        r = requests.post(url, headers=headers, json=payload, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "Sin respuesta.")
+        else:
+            logger.error(f"Error modelo ({r.status_code}): {r.text}")
+            return "⚠️ El modelo no respondió correctamente."
+    except Exception as e:
+        logger.exception("Error llamando al modelo:")
+        return "❌ Error conectando con el modelo."
 
+# ---------------- HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    await update.message.reply_text(
-        f"👋 ¡Qué lo qué, {user.first_name or 'tigre'}!\n"
-        f"Soy tu IA dominicana en la nube 😎.\n\n"
-        f"Escríbeme algo y te lo respondo con estilo 🔥"
+    name = user.first_name or user.username or "compa"
+    text = (
+        f"🔥 ¡Qué lo qué, {name}! Bienvenido.\n\n"
+        "Soy tu bot minimal — responde texto y hago eco si no hay modelo.\n"
+        "Escribe cualquier cosa para probar."
     )
+    await update.message.reply_text(text)
+    send_log_to_channel(f"🟢 /start por {name} ({user.id})")
 
-async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.strip()
-    chat_id = update.effective_chat.id
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    uid = user.id
+    user_msg = (update.message.text or "").strip()
+    if not user_msg:
+        return
 
-    # Mensaje animado de "pensando..."
-    thinking_msg = await update.message.reply_text("🤔 Déjame pensarlo un chin...")
+    # anti-flood
+    now = time.time()
+    if now - LAST_MESSAGE_TIME.get(uid, 0) < FLOOD_DELAY:
+        await update.message.reply_text("⏳ Espera un momento, estoy procesando...")
+        return
+    LAST_MESSAGE_TIME[uid] = now
 
-    try:
-        # Llamada al modelo de Hugging Face
-        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-        payload = {"inputs": user_text, "parameters": {"max_new_tokens": 250}}
-        async with httpx.AsyncClient(timeout=40) as client:
-            resp = await client.post("https://api-inference.huggingface.co/models/gpt2", headers=headers, json=payload)
-            data = resp.json()
+    # historial simple
+    USER_HISTORY.setdefault(uid, []).append({"role": "user", "content": user_msg})
+    if len(USER_HISTORY[uid]) > HISTORY_LIMIT * 2:
+        USER_HISTORY[uid] = USER_HISTORY[uid][-HISTORY_LIMIT * 2 :]
 
-        # Procesar la respuesta
-        if isinstance(data, list) and len(data) > 0 and "generated_text" in data[0]:
-            reply_text = data[0]["generated_text"].strip()
-        else:
-            reply_text = "😅 No entendí eso, repíteme de otra forma."
+    # construye mensajes para el modelo (si aplica)
+    messages = [{"role": "system", "content": "Eres un asistente conciso y claro."}] + USER_HISTORY[uid][-HISTORY_LIMIT:] + [{"role": "user", "content": user_msg}]
 
-        await thinking_msg.edit_text(reply_text)
+    # feedback al usuario
+    thinking = await update.message.reply_text("🔍 Pensando...")
 
-    except Exception as e:
-        logging.error(f"❌ Error al procesar mensaje: {e}")
-        await thinking_msg.edit_text("⚠️ Ocurrió un problema procesando tu mensaje.")
+    # llama al modelo o eco
+    reply = call_text_model(messages)
 
-# ───────────────────────────────────────────────────────────────
-# INICIALIZACIÓN DE TELEGRAM APP
-application = Application.builder().token(TELEGRAM_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_message))
+    # responde y limpia
+    await thinking.edit_text(reply)
+    USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-# ───────────────────────────────────────────────────────────────
-# FUNCIÓN PARA MANTENER EL LOOP ACTIVO EN HILO SEPARADO
-def run_telegram():
-    asyncio.run(application.run_polling(stop_signals=None))
+    # log ligero
+    send_log_to_channel(f"👤 {user.first_name or user.username}:\n❓ {user_msg}\n💬 {reply[:500]}")
 
-# ───────────────────────────────────────────────────────────────
-# MAIN
+# ---------------- RUN ----------------
+def run_bot():
+    if not TELEGRAM_TOKEN:
+        raise RuntimeError("❌ Configura TELEGRAM_TOKEN en las variables de entorno.")
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    logger.info("🚀 Bot arrancando (polling)...")
+    app.run_polling()
+
 if __name__ == "__main__":
-    logging.info(f"🌐 Configurando webhook en {RENDER_URL}/{TELEGRAM_TOKEN}")
-
-    # Aseguramos el webhook correcto
-    async def set_hook():
-        async with application.bot:
-            await application.bot.set_webhook(url=f"{RENDER_URL}/{TELEGRAM_TOKEN}")
-    asyncio.run(set_hook())
-
-    # Hilo paralelo para procesar updates
-    threading.Thread(target=lambda: asyncio.run(application.start()), daemon=True).start()
-
-    # Mantener el servidor Flask activo (Render necesita esto)
-    app.run(host="0.0.0.0", port=PORT)
+    run_bot()
