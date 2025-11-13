@@ -5,7 +5,7 @@ import requests
 import logging
 from io import BytesIO
 from pathlib import Path
-from flask import Flask
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -144,20 +144,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-# ---------- FLASK + BOT ----------
+# ---------- WEBHOOK SETUP ----------
 app = Flask(__name__)
+application = None
 
 @app.route('/')
-def index():
-    return "🤖 Bot WormGPT activo.", 200
+def home():
+    return "🤖 WormGPT bot activo por webhooks.", 200
+
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put(update)
+    return "OK", 200
 
 def run_bot():
+    global application
+    port = int(os.getenv("PORT", 10000))
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").replace("https://", "")
     application = Application.builder().token(TELEGRAM_TOKEN).build()
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling()
+
+    logger.info("Configurando webhook...")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=TELEGRAM_TOKEN,
+        webhook_url=f"https://{render_url}/{TELEGRAM_TOKEN}",
+    )
 
 if __name__ == "__main__":
-    import threading
-    threading.Thread(target=run_bot).start()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    run_bot()
