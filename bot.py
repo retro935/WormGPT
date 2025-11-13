@@ -31,7 +31,7 @@ def load_system_prompt():
         with open("system-prompt.txt", "r", encoding="utf-8") as f:
             return f.read().strip()
     except FileNotFoundError:
-        return "Eres un asistente útil, conciso y sin filtro 😈."
+        return "Soy tu asistente útil, conciso y sin filtro 😈. Y sí, soy el rey del carding, bro. Si necesitas algo, aquí estoy. 💳🔥"
 
 SYSTEM_PROMPT = load_system_prompt()
 
@@ -61,7 +61,6 @@ def call_text_model(messages):
         payload = {
             "model": "deepseek-ai/deepseek-v3.1-terminus",
             "messages": messages,
-            "max_tokens": 1024,
         }
         r = requests.post(url, headers=headers, json=payload, timeout=30)
         if r.status_code == 200:
