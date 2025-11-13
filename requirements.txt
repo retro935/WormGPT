@@ -4,4 +4,3 @@ Pillow==10.1.0  # Fix para PIL
 langdetect==1.0.9  # Si lo necesitas; si falla, quítalo (código lo maneja optional)
 setuptools==70.0.0  # Fix para metadata '__version__'
 wheel==0.43.0  # Pa' builds suaves
---no-cache-dir  # Opcional: Evita cache roto
