@@ -20,7 +20,7 @@ logger = logging.getLogger("wormgpt")
 
 # ---------------- ESTADO ----------------
 LAST_MESSAGE_TIME = {}
-FLOOD_DELAY = 2  # segundos entre mensajes
+FLOOD_DELAY = 15  # segundos entre mensajes
 USER_HISTORY = {}
 HISTORY_LIMIT = 6
 
@@ -108,7 +108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         + [{"role": "user", "content": user_msg}]
     )
 
-    thinking = await update.message.reply_text("🔍 Pensando...")
+    thinking = await update.message.reply_text("🔍")
     reply = call_text_model(messages)
     await thinking.edit_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
