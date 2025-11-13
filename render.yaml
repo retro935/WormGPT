@@ -1,23 +1,2 @@
-services:
-  - type: web
-    name: wormgpt
-    env: python
-    plan: free
-    buildCommand: |
-      mkdir -p .cache/pip
-      pip install --cache-dir .cache/pip -r requirements-min.txt --quiet
-    startCommand: python bot.py
-    autoDeploy: true
-    envVars:
-      - key: TELEGRAM_TOKEN
-        sync: false
-      - key: MODEL_API_KEY
-        sync: false
-      - key: HF_TOKEN
-        sync: false
-      - key: LOG_CHANNEL_ID
-        sync: false
-    disk:
-      name: cache
-      mountPath: .cache
-      sizeGB: 1
+buildCommand: pip install -r requirements.txt
+startCommand: python bot.py
