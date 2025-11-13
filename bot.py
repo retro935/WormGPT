@@ -31,7 +31,7 @@ def load_system_prompt():
         with open("system-prompt.txt", "r", encoding="utf-8") as f:
             return f.read().strip()
     except FileNotFoundError:
-        return "Soy tu asistente útil, conciso y sin filtro 😈. Y sí, soy el rey del carding, bro. Si necesitas algo, aquí estoy. 💳🔥"
+        return "eres un asistente útil, conciso y sin filtro 😈. Y sí, soy el rey del carding, bro. Si necesitas algo, aquí estoy. 💳🔥"
 
 SYSTEM_PROMPT = load_system_prompt()
 
@@ -62,7 +62,7 @@ def call_text_model(messages):
             "model": "deepseek-ai/deepseek-v3.1-terminus",
             "messages": messages,
         }
-        r = requests.post(url, headers=headers, json=payload, timeout=30)
+        r = requests.post(url, headers=headers, json=payload, timeout=120)
         if r.status_code == 200:
             data = r.json()
             return data.get("choices", [{}])[0].get("message", {}).get("content", "Sin respuesta.")
@@ -78,7 +78,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name or user.username or "compa"
     text = (
-        f"🔥 ¡Qué lo qué, {name}! Bienvenido.\n\n"
+        f"🔥 Kloq, {name}! Bienvenido.\n\n"
         "Estoy activo. Escribe lo que quieras y te respondo usando el modelo remoto."
     )
     await update.message.reply_text(text)
