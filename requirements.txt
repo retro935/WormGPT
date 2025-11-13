@@ -1,5 +1,7 @@
-python-telegram-bot==20.3
-requests
-python-dotenv
-flask
-langdetect
+python-telegram-bot==20.7  # Pa' el bot
+requests==2.31.0
+langdetect==1.0.9
+Pillow==10.1.0  # ← Esto fixea el PIL error
+diffusers==0.25.0  # Pa' Hugging Face (opcional si usas API pura)
+transformers==4.36.0  # Si usas local models
+torch==2.1.0  # Si usas local (opcional)
