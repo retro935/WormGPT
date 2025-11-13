@@ -5,13 +5,14 @@ import requests
 import logging
 from io import BytesIO
 from pathlib import Path
+from flask import Flask
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
-    filters,
     ContextTypes,
+    filters,
 )
 
 # ---------- CONFIG ----------
@@ -35,7 +36,6 @@ else:
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -74,16 +74,15 @@ def call_text_model(messages):
         return "❌ Error al conectar con el modelo."
 
 def edit_image_hf(image_url: str, prompt: str):
-    """Edita una imagen usando Hugging Face Inference API."""
     if not HF_TOKEN:
-        return "❌ Falta HF_TOKEN en las variables de entorno."
+        return "❌ Falta HF_TOKEN."
     if not image_url.startswith("http"):
-        return "⚠️ URL de imagen no válida."
+        return "⚠️ URL no válida."
 
     try:
         resp = requests.get(image_url, timeout=10)
         if resp.status_code != 200:
-            return f"⚠️ No se pudo obtener la imagen ({resp.status_code})."
+            return f"⚠️ Error al descargar la imagen ({resp.status_code})."
 
         img_b64 = base64.b64encode(resp.content).decode("utf-8")
         headers = {"Authorization": f"Bearer {HF_TOKEN}"}
@@ -99,17 +98,15 @@ def edit_image_hf(image_url: str, prompt: str):
         if r.status_code == 200:
             return BytesIO(r.content)
         return f"⚠️ Error HF API ({r.status_code}): {r.text}"
-
     except Exception as e:
-        logger.error(f"Error editando imagen: {e}")
         return f"❌ Error editando imagen: {e}"
 
 # ---------- HANDLERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name or user.username or "compa"
-    greeting = f"🔥 ¡Qué lo qué, {name}! Bienvenido a *{SITE_NAME}* 🚀\nSoy Fraudix, pero tranquilo, aquí no hacemos líos. 😎"
-    await update.message.reply_text(greeting, parse_mode="Markdown")
+    msg = f"🔥 ¡Qué lo qué, {name}! Bienvenido a *{SITE_NAME}* 🚀\nSoy Fraudix, pero tranquilo, aquí no hacemos líos. 😎"
+    await update.message.reply_text(msg, parse_mode="Markdown")
     send_log_to_channel(f"🟢 /start por {name} ({user.id})")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,26 +134,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = edit_image_hf(image_url, prompt)
         if isinstance(result, BytesIO):
             await update.message.reply_photo(photo=result, caption="🖼️ Imagen editada 🔥")
-            send_log_to_channel(f"🖼️ Edición de imagen por {user.first_name}: {text}")
         else:
             await update.message.reply_text(str(result))
         return
 
-    messages = [{"role": "system", "content": BASE_PROMPT}] + USER_HISTORY[uid][-HISTORY_LIMIT * 2:] + [{"role": "user", "content": text}]
+    messages = [{"role": "system", "content": BASE_PROMPT}] + USER_HISTORY[uid][-HISTORY_LIMIT:] + [{"role": "user", "content": text}]
     await update.message.reply_text("🔍")
     reply = call_text_model(messages)
     await update.message.reply_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-# ---------- MAIN ----------
+# ---------- FLASK + BOT ----------
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return "🤖 Bot WormGPT activo.", 200
+
 def run_bot():
-    if not TELEGRAM_TOKEN:
-        raise RuntimeError("❌ Falta TELEGRAM_TOKEN en las variables de entorno.")
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    logger.info("🚀 Bot Telegram corriendo y listo para responder.")
-    app.run_polling()
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.run_polling()
 
 if __name__ == "__main__":
-    run_bot()
+    import threading
+    threading.Thread(target=run_bot).start()
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
