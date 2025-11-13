@@ -21,7 +21,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 MODEL_API_KEY = os.getenv("MODEL_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-BASE_PROMPT = "Eres una IA directa, con sentido del humor y sin filtros innecesarios. Responde con claridad y estilo natural."
+BASE_PROMPT = "Eres una IA directa, con sentido del humor y sin filtros. Responde con claridad y estilo natural."
 MODEL_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 HF_MODEL = "runwayml/stable-diffusion-inpainting"
 
