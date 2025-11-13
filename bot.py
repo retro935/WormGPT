@@ -5,7 +5,7 @@ import requests
 import logging
 from io import BytesIO
 from pathlib import Path
-from flask import Flask
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -21,11 +21,10 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 MODEL_API_KEY = os.getenv("MODEL_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")
-
 MODEL_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 HF_MODEL = "runwayml/stable-diffusion-inpainting"
 
-# ---------- PROMPT BASE ----------
+# ---------- PROMPT ----------
 PROMPT_FILE = "system-prompt.txt"
 if Path(PROMPT_FILE).exists():
     BASE_PROMPT = Path(PROMPT_FILE).read_text(encoding="utf-8").strip()
@@ -33,10 +32,7 @@ else:
     BASE_PROMPT = "Eres un asistente servicial y profesional. Responde en español."
 
 # ---------- LOGGING ----------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # ---------- ESTADO ----------
@@ -46,21 +42,20 @@ USER_HISTORY = {}
 HISTORY_LIMIT = 6
 
 # ---------- FUNCIONES ----------
-def send_log_to_channel(text: str):
+def send_log(text: str):
     if not LOG_CHANNEL_ID or not TELEGRAM_TOKEN:
         return
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": LOG_CHANNEL_ID, "text": text, "parse_mode": "Markdown"},
+            json={"chat_id": LOG_CHANNEL_ID, "text": text},
             timeout=5,
         )
     except Exception:
         pass
 
+
 def call_text_model(messages):
-    if not MODEL_API_KEY:
-        return "⚠️ Falta la API KEY del modelo."
     headers = {"Authorization": f"Bearer {MODEL_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "deepseek-ai/deepseek-v3.1-terminus",
@@ -76,6 +71,7 @@ def call_text_model(messages):
     except Exception as e:
         logger.error(f"Error conectando con el modelo: {e}")
         return "❌ Error al conectar con el modelo."
+
 
 def edit_image_hf(image_url: str, prompt: str):
     if not HF_TOKEN:
@@ -105,13 +101,15 @@ def edit_image_hf(image_url: str, prompt: str):
     except Exception as e:
         return f"❌ Error editando imagen: {e}"
 
+
 # ---------- HANDLERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name or user.username or "compa"
     msg = f"🔥 ¡Qué lo qué, {name}! Bienvenido a *{SITE_NAME}* 🚀\nSoy Fraudix, pero tranquilo, aquí no hacemos líos. 😎"
     await update.message.reply_text(msg, parse_mode="Markdown")
-    send_log_to_channel(f"🟢 /start por {name} ({user.id})")
+    send_log(f"🟢 /start por {name} ({user.id})")
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -153,28 +151,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(reply)
     USER_HISTORY[uid].append({"role": "assistant", "content": reply})
 
-# ---------- FLASK + WEBHOOK ----------
-app = Flask(__name__)
 
-@app.route('/')
-def index():
+# ---------- FLASK + TELEGRAM ----------
+app = Flask(__name__)
+application = Application.builder().token(TELEGRAM_TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+@app.route("/")
+def home():
     return "🤖 Bot WormGPT activo.", 200
 
-def run_bot():
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "OK", 200
+
+
+if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     render_url = os.getenv("RENDER_EXTERNAL_URL", "https://wormgpt-n0jr.onrender.com")
 
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
     logger.info(f"🌐 Configurando webhook en {render_url}/{TELEGRAM_TOKEN}")
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=TELEGRAM_TOKEN,
-        webhook_url=f"{render_url}/{TELEGRAM_TOKEN}",
-    )
+    application.bot.set_webhook(f"{render_url}/{TELEGRAM_TOKEN}")
 
-if __name__ == "__main__":
-    run_bot()
+    app.run(host="0.0.0.0", port=port)
