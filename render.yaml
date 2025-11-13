@@ -1,2 +1,29 @@
-buildCommand: pip install -r requirements.txt
-startCommand: python bot.py
+services:
+  - type: web
+    name: wormgpt
+    runtime: python
+    env: python
+    plan: free
+    autoDeploy: true
+    region: oregon
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python bot.py
+
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: MODEL_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: LOG_CHANNEL_ID
+        sync: false
+
+    # ⚡ Mejora de rendimiento: evita reinstalar dependencias en cada build
+    disk:
+      name: cache
+      mountPath: /opt/render/project/.cache
