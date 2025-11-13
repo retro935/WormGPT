@@ -2,16 +2,11 @@ services:
   - type: web
     name: wormgpt-bot
     env: python
-    buildCommand: |
-      apt-get update && apt-get install -y build-essential \
-        libjpeg-dev zlib1g-dev libpng-dev libwebp-dev libtiff5-dev \
-        libffi-dev libssl-dev
-      pip install --upgrade pip setuptools
-      pip install -r requirements.txt
+    buildCommand: "pip install --upgrade pip setuptools && pip install -r requirements.txt"
     startCommand: "python main.py"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.9  # 🔥 Evita Python 3.13 (causa del KeyError '__version__')
+        value: 3.11.9
       - key: HF_TOKEN
         value: ${HF_TOKEN}
       - key: TELEGRAM_TOKEN
