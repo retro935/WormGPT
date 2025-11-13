@@ -1,3 +1,5 @@
-python-telegram-bot==20.6
+python-telegram-bot==20.8
+Flask==3.0.3
 requests==2.32.3
-Pillow==10.2.0
+Pillow==10.0.0
+gunicorn==21.2.0
