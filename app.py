@@ -1,5 +1,3 @@
-```python
-# app.py — WormGPT v3 (added base system prompt for WormGPT AI 😈)
 import os
 import logging
 import asyncio
