@@ -96,7 +96,7 @@ async def ask_ai(prompt: str):
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             top_p=0.7,
-            max_tokens=512,
+            max_tokens=2000,
             extra_body={"chat_template_kwargs": {"thinking": True}},
             stream=False
         )
@@ -126,7 +126,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     await update.message.reply_sticker(
-        "CAACAgEAAxkBAAIDGWb_QJVdEo-TU3_N0JVpaz6RtZpmAAJdAANWnb8l1BxPTsCkXys2BA"
+        "CAACAgIAAxkBAAE9zfZpFn1UazwnPoOGdDU_IJ2WcahNHwACnhkAAgKv0UqqybtL4rQGYjYE"
     )
     await asyncio.sleep(1)
 
