@@ -4,3 +4,4 @@ python-telegram-bot==20.8
 aiohttp
 aiosqlite
 flask
+requests
