@@ -1,4 +1,4 @@
-# app.py — Bot VIP v3 (single active model, system-prompts support)
+# app.py — WormGPT v3 (integrated with Grok models via xAI API 😈)
 import os
 import logging
 import asyncio
@@ -25,17 +25,17 @@ from telegram.ext import (
 
 # ---------------- CONFIG ----------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # nvapi... or similar
+MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # xAI API key from https://x.ai/api
 OWNER_ID = int(os.getenv("OWNER_ID", "6699273462"))  # owner
 ADMIN_USERNAME = "@swippe_god"
 
-DB_FILE = os.getenv("DB_FILE", "vip_v3.sqlite3")
+DB_FILE = os.getenv("DB_FILE", "wormgpt_v3.sqlite3")
 
 # thinking sticker (will be sent when AI is processing and deleted after)
 THINKING_STICKER = "CAACAgEAAxkBAAE90AJpFtQXZ4J90fBT2-R3oBJqi6IUewACrwIAAphXIUS8lNoZG4P3rDYE"
 
-# Single active model (change this string to another later if needed)
-ACTIVE_MODEL = "deepseek-ai/deepseek-r1"
+# Single active model (Grok model from xAI)
+ACTIVE_MODEL = "grok-3"  # or "grok-3-mini", "grok-4", etc. See https://x.ai/api for options
 
 # available models list (for menu display; keep only ACTIVE_MODEL for now)
 AVAILABLE_MODELS = [ACTIVE_MODEL]
@@ -46,10 +46,10 @@ MAX_MESSAGE_PART = 4000  # chunk size for Telegram messages
 
 # Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("vip-bot-v3")
+logger = logging.getLogger("wormgpt")
 
-# OpenAI-compatible NVIDIA Integrate client
-client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=MODEL_API_KEY)
+# OpenAI-compatible xAI Grok client
+client = OpenAI(base_url="https://api.x.ai/v1", api_key=MODEL_API_KEY)
 
 # In-memory per-user settings while process runs
 USER_SETTINGS: Dict[int, Dict[str, object]] = {}  # e.g. {uid: {"reasoning": False, "maintenance": False}}
@@ -120,13 +120,13 @@ def get_user_settings(uid: int) -> Dict[str, object]:
 def read_system_prompt_for_model(model: str) -> str:
     """
     Loads a system prompt for the given model if a file exists:
-    - tries 'system-prompts-{model_sanitized}.txt'
-    - falls back to 'system-prompts.txt'
+    - tries 'wormgpt-prompts-{model_sanitized}.txt'
+    - falls back to 'wormgpt-prompts.txt'
     - falls back to empty string
     Model sanitized: replace '/' with '_'
     """
     model_safe = model.replace("/", "_")
-    candidates = [f"system-prompts-{model_safe}.txt", "system-prompts.txt"]
+    candidates = [f"wormgpt-prompts-{model_safe}.txt", "wormgpt-prompts.txt"]
     for filename in candidates:
         if os.path.exists(filename):
             try:
@@ -151,10 +151,10 @@ def split_long_text(text: str, limit: int = MAX_MESSAGE_PART) -> List[str]:
         parts.append(cur)
     return parts
 
-# ---------------- AI CALL (NVIDIA integrate via OpenAI client) ----------------
+# ---------------- AI CALL (xAI Grok via OpenAI client) ----------------
 async def ask_model(system_prompt: str, user_prompt: str, model: str, reasoning_enabled: bool) -> str:
     """
-    Calls the model and returns textual content.
+    Calls the Grok model and returns textual content.
     If reasoning_enabled True the model may produce internal reasoning but it will NOT be forwarded to the chat.
     We log a short prefix of the reasoning for owner debugging, but do NOT reveal it to users.
     """
@@ -171,7 +171,7 @@ async def ask_model(system_prompt: str, user_prompt: str, model: str, reasoning_
             temperature=0.2,
             top_p=0.7,
             max_tokens=1500,
-            extra_body={"chat_template_kwargs": {"thinking": True}},
+            # Removed extra_body as it's NVIDIA-specific; Grok doesn't need it
             stream=False,
         )
 
@@ -190,7 +190,7 @@ async def ask_model(system_prompt: str, user_prompt: str, model: str, reasoning_
         else:
             final_text = getattr(msg, "content", None) or getattr(msg, "text", None) or ""
 
-        # reasoning (internal) - do NOT send to user
+        # reasoning (internal) - do NOT send to user (Grok-specific if applicable)
         reasoning = getattr(msg, "reasoning_content", None) or ""
         if reasoning and reasoning_enabled:
             # log only short prefix for diagnostics
@@ -206,9 +206,9 @@ def build_main_keyboard(uid: int) -> InlineKeyboardMarkup:
     s = get_user_settings(uid)
     reasoning_label = "🧠 Razonamiento: ON" if s.get("reasoning") else "🧠 Razonamiento: OFF"
     maintenance_label = "🛑 Mantenimiento: ON" if s.get("maintenance") else "🟢 Mantenimiento: OFF"
-    model_label = f"🔁 Modelo: {ACTIVE_MODEL.split('/')[-1]}"
+    model_label = f"🐛 Modelo: {ACTIVE_MODEL}"
     keyboard = [
-        [InlineKeyboardButton("🤖 Usar IA", callback_data="use_ai")],
+        [InlineKeyboardButton("😈 Usar WormGPT", callback_data="use_ai")],
         [InlineKeyboardButton(reasoning_label, callback_data="toggle_reasoning"), InlineKeyboardButton(model_label, callback_data="show_model")],
         [InlineKeyboardButton("⭐ Estado VIP", callback_data="vip_status"), InlineKeyboardButton("🔧 Mantenimiento", callback_data="toggle_maintenance")],
         [InlineKeyboardButton("🛠 Admin", callback_data="admin_panel")]
@@ -224,8 +224,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid not in vips or vips[uid] <= datetime.utcnow():
         # respond with professional message and the user's ID in triple backticks
         await update.message.reply_text(
-            f"Hola {user.first_name or user.username},\n\n"
-            "Este servicio es exclusivo para usuarios VIP. Si deseas acceso, contacta al administrador y envíale tu ID para la compra.\n\n"
+            f"🐛 Hola {user.first_name or user.username},\n\n"
+            "WormGPT es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.\n\n"
             f"Tu User ID (cópialo y envíalo al administrador):\n```{uid}```\n\n"
             f"Contacto admin: {ADMIN_USERNAME}",
             parse_mode=ParseMode.MARKDOWN,
@@ -234,13 +234,13 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # VIP: show welcome and keyboard
     await update.message.reply_text(
-        f"👋 ¡Hola {user.first_name or user.username}! Bienvenido — eres VIP ✅",
+        f"🐛 ¡Bienvenido, {user.first_name or user.username}! WormGPT con Grok activado 😈 — eres VIP ✅",
         reply_markup=build_main_keyboard(uid)
     )
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    await update.message.reply_text("📍 Menú principal:", reply_markup=build_main_keyboard(uid))
+    await update.message.reply_text("🐛 Menú WormGPT:", reply_markup=build_main_keyboard(uid))
 
 async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -249,7 +249,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
     data = query.data
 
     if data == "use_ai":
-        return await query.edit_message_text("✍️ Escribe tu pregunta en el chat (envía texto).")
+        return await query.edit_message_text("😈 Escribe tu consulta en el chat (envía texto).")
 
     if data == "toggle_reasoning":
         s = get_user_settings(uid)
@@ -265,7 +265,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
         return await query.edit_message_text(f"🔧 Mantenimiento {'activado' if s['maintenance'] else 'desactivado'}.", reply_markup=build_main_keyboard(uid))
 
     if data == "show_model":
-        return await query.edit_message_text(f"Modelo actual: `{ACTIVE_MODEL}`\n(Próximamente podrás listar/seleccionar más modelos)", parse_mode=ParseMode.MARKDOWN)
+        return await query.edit_message_text(f"🐛 Modelo actual: `{ACTIVE_MODEL}` (Grok de xAI)\n(Próximamente podrás listar/seleccionar más modelos)", parse_mode=ParseMode.MARKDOWN)
 
     if data == "vip_status":
         vips = await list_vips_db()
@@ -309,7 +309,7 @@ async def addvip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         return await update.message.reply_text("ID o días inválidos.")
     exp = await add_vip_db(target, days)
-    await update.message.reply_text(f"✅ Usuario {target} añadido como VIP hasta {exp.isoformat()}")
+    await update.message.reply_text(f"✅ Usuario {target} añadido como VIP hasta {exp.isoformat()} 😈")
 
 async def delvip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -336,7 +336,7 @@ async def listvip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for u, exp in vips.items():
         left = max(0, (exp - datetime.utcnow()).days)
         lines.append(f"- `{u}` — expira: `{exp.isoformat()}` ({left} días)")
-    return await update.message.reply_text("⭐ VIPs:\n" + "\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    return await update.message.reply_text("🐛 VIPs WormGPT:\n" + "\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def whoami_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -346,7 +346,7 @@ async def myvip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     vips = await list_vips_db()
     if uid not in vips or vips[uid] <= datetime.utcnow():
-        return await update.message.reply_text("🚫 No eres VIP o tu VIP expiró.")
+        return await update.message.reply_text("🚫 No eres VIP o tu acceso expiró.")
     exp = vips[uid]
     await update.message.reply_text(f"⏰ Tu VIP expira el: `{exp.isoformat()}`", parse_mode=ParseMode.MARKDOWN)
 
@@ -361,11 +361,11 @@ async def process_ai_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # check VIP
     vips = await list_vips_db()
     if uid not in vips or vips[uid] <= datetime.utcnow():
-        return await msg.reply_text("🚫 Solo VIPs pueden usar esta función.")
+        return await msg.reply_text("🚫 Solo usuarios VIP pueden usar WormGPT.")
 
     # check maintenance (global/process-level controlled by owner setting)
     if get_user_settings(OWNER_ID).get("maintenance"):
-        return await msg.reply_text("🔧 El bot está en mantenimiento. Intenta más tarde.")
+        return await msg.reply_text("🔧 WormGPT en mantenimiento. Intenta más tarde.")
 
     # read model-specific system prompt (fallback)
     system_prompt = read_system_prompt_for_model(ACTIVE_MODEL)
@@ -442,7 +442,7 @@ def main():
 
     app.post_init = _on_startup
 
-    logger.info("🚀 Bot VIP v3 arrancando...")
+    logger.info("🐛 WormGPT v3 con Grok arrancando... 😈")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
