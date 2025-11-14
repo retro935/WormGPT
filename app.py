@@ -3,7 +3,7 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 import sqlite3
-import requests
+from openai import OpenAI
 
 from telegram import (
     Update,
@@ -11,7 +11,6 @@ from telegram import (
     InlineKeyboardButton,
 )
 from telegram.ext import (
-    Application,
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
@@ -30,6 +29,12 @@ DB_PATH = "vip.db"
 # -------------------- LOGGER --------------------
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
+
+# -------------------- NVIDIA CLIENT --------------------
+client = OpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=MODEL_API_KEY
+)
 
 # -------------------- DB INIT --------------------
 def init_db():
@@ -53,6 +58,7 @@ def is_vip(user_id: int):
     cur.execute("SELECT expires_at FROM vip WHERE user_id=?", (user_id,))
     row = cur.fetchone()
     conn.close()
+
     if not row:
         return False
 
@@ -64,10 +70,12 @@ def add_vip(user_id: int, days: int):
     expires = datetime.utcnow() + timedelta(days=days)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
     cur.execute("""
         INSERT OR REPLACE INTO vip (user_id, expires_at)
         VALUES (?, ?)
     """, (user_id, expires.isoformat()))
+
     conn.commit()
     conn.close()
     return expires
@@ -80,24 +88,37 @@ def remove_expired_vips():
     conn.commit()
     conn.close()
 
-
 # ---------------- AI REQUEST -----------------
 async def ask_ai(prompt: str):
-    url = "https://integrate.api.nvidia.com/v1"
-    data = {
-        "model": "deepseek-ai/deepseek-v3.1",
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    headers = {
-        "Authorization": f"Bearer {MODEL_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    r = requests.post(url, json=data, headers=headers)
     try:
-        return r.json()["choices"][0]["message"]["content"]
-    except:
-        return "❌ Error en la IA."
+        completion = client.chat.completions.create(
+            model="deepseek-ai/deepseek-v3.1",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            top_p=0.7,
+            max_tokens=4096,
+            extra_body={"chat_template_kwargs": {"thinking": True}},
+            stream=False
+        )
+
+        reasoning = ""
+        msg = completion.choices[0].message
+
+        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+            reasoning = msg.reasoning_content
+
+        final_response = msg["content"]
+
+        result = ""
+        if reasoning:
+            result += f"🧠 *Razonamiento del modelo:*\n{reasoning}\n\n"
+
+        result += f"💬 *Respuesta:*\n{final_response}"
+
+        return result
+
+    except Exception as e:
+        return f"❌ Error en la IA: {e}"
 
 
 # ---------------- START -----------------
@@ -107,14 +128,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_sticker(
         "CAACAgEAAxkBAAIDGWb_QJVdEo-TU3_N0JVpaz6RtZpmAAJdAANWnb8l1BxPTsCkXys2BA"
     )
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(1)
 
     await update.message.reply_text(
         f"👋 Kloq `{user.first_name}`.\n"
         f"🍆 Bienvenido a RetroAI.\n\n"
-        f"Usa /menu para ver opciones."
+        f"Usa /menu para ver opciones.",
+        parse_mode="Markdown"
     )
-
 
 # ---------------- MENU -----------------
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,9 +146,9 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🛠 Admin", callback_data="admin")],
     ]
     await update.message.reply_text(
-        "📍 MENÚ", reply_markup=InlineKeyboardMarkup(keyboard)
+        "📍 MENÚ",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 # ---------------- CALLBACKS -----------------
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,7 +158,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "vip_status":
         status = "✅ Activo" if is_vip(user_id) else "❌ NO VIP"
-        await query.edit_message_text(f"⭐ Tu estado VIP: **{status}**")
+        await query.edit_message_text(f"⭐ Tu estado VIP: *{status}*", parse_mode="Markdown")
         return
 
     if query.data == "admin":
@@ -159,7 +180,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "admin_addvip":
         return await query.edit_message_text(
-            "Envia:  `/addvip user_id días`", parse_mode="Markdown"
+            "Envia:  `/addvip user_id días`",
+            parse_mode="Markdown"
         )
 
     if query.data == "use_ai":
@@ -167,7 +189,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "edit_img":
         return await query.edit_message_text("📤 Envia una imagen para editar.")
-
 
 # ---------------- ADD VIP CMD -----------------
 async def addvip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -192,26 +213,25 @@ async def addvip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-
 # ---------------- IA MENSAJE -----------------
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     if not is_vip(user_id):
         return await update.message.reply_text("❌ Solo usuarios VIP pueden usar la IA.")
 
     text = update.message.text
-    response = await ask_ai(text)
-    await update.message.reply_text(response)
-
+    result = await ask_ai(text)
+    await update.message.reply_text(result, parse_mode="Markdown")
 
 # ---------------- IMAGE -----------------
 async def image_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     if not is_vip(user_id):
         return await update.message.reply_text("❌ Necesitas VIP.")
 
     await update.message.reply_text("🖼 Procesando imagen... (demo)")
-
 
 # ---------------- MAIN -----------------
 def main():
@@ -221,13 +241,11 @@ def main():
     app.add_handler(CommandHandler("menu", menu))
     app.add_handler(CommandHandler("addvip", addvip_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
-
     app.add_handler(MessageHandler(filters.PHOTO, image_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
     print("BOT CORRIENDO...")
-    app.run_polling()  # PTB 21 compatible
-
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
