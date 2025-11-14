@@ -1,346 +1,259 @@
-# app.py
 import os
-import asyncio
 import logging
-import aiohttp
-import aiosqlite
-import threading
+import asyncio
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
-
-from flask import Flask
-
-# FIX: ParseMode ahora se importa desde telegram.constants
-from telegram.constants import ParseMode
 
 from telegram import (
     Update,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InputFile,
 )
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
+    CallbackQueryHandler,
     MessageHandler,
     ContextTypes,
     filters,
 )
 
-# ---------------- CONFIG ----------------
+import sqlite3
+import requests
+
+# -------------------------------- CONFIG --------------------------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MODEL_API_KEY = os.getenv("MODEL_API_KEY")  # opcional (si no está, bot hace eco)
-OWNER_ID = int(os.getenv("OWNER_ID", "6699273462"))
+MODEL_API_KEY = os.getenv("MODEL_API_KEY")
 
-DB_FILE = os.getenv("DB_FILE", "bot_data.sqlite3")
-WELCOME_STICKER = os.getenv(
-    "WELCOME_STICKER",
-    "CAACAgIAAxkBAAE9zfZpFn1UazwnPoOGdDU_IJ2WcahNHwACnhkAAgKv0UqqybtL4rQGYjYE",
-)
+OWNER_ID = 6699273462  # <-- CAMBIA A TU ID
 
-# Keyboards
-MAIN_MENU = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton("📝 Chat IA"), KeyboardButton("🖼 Editar Imagen")],
-        [KeyboardButton("⚙️ Configuración"), KeyboardButton("ℹ️ Info VIP")],
-    ],
-    resize_keyboard=True,
-)
-ADMIN_MENU = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton("➕ Añadir VIP"), KeyboardButton("➖ Quitar VIP")],
-        [KeyboardButton("⏳ Extender VIP"), KeyboardButton("📋 Lista VIP")],
-        [KeyboardButton("🧹 Limpiar expirados"), KeyboardButton("📊 Stats")],
-        [KeyboardButton("⬅️ Salir")],
-    ],
-    resize_keyboard=True,
-)
+DB_PATH = "vip.db"
 
-# logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("bot_vip_sqlite")
+# ------------------------------ LOGGER ------------------------------
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
-# global
-APPL = None
-HTTP_SESSION: Optional[aiohttp.ClientSession] = None
-
-# ---------------- DB ----------------
-CREATE_VIPS_SQL = """
-CREATE TABLE IF NOT EXISTS vips (
-    user_id INTEGER PRIMARY KEY,
-    expires TEXT NOT NULL
-);
-"""
-
-async def init_db():
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute(CREATE_VIPS_SQL)
-        await db.commit()
-
-async def add_vip_db(user_id: int, days: int):
-    expires = (datetime.now() + timedelta(days=days)).isoformat()
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO vips (user_id, expires) VALUES (?, ?)",
-            (user_id, expires),
+# --------------------------- DB INIT ---------------------------
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS vip (
+            user_id INTEGER PRIMARY KEY,
+            expires_at TEXT
         )
-        await db.commit()
+    """)
+    conn.commit()
+    conn.close()
 
-async def remove_vip_db(user_id: int):
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute("DELETE FROM vips WHERE user_id = ?", (user_id,))
-        await db.commit()
+init_db()
 
-async def extend_vip_db(user_id: int, days: int) -> bool:
-    async with aiosqlite.connect(DB_FILE) as db:
-        cur = await db.execute("SELECT expires FROM vips WHERE user_id = ?", (user_id,))
-        row = await cur.fetchone()
-        if not row:
-            return False
-        current = datetime.fromisoformat(row[0])
-        new = current + timedelta(days=days)
-        await db.execute("UPDATE vips SET expires = ? WHERE user_id = ?", (new.isoformat(), user_id))
-        await db.commit()
-        return True
+# --------------------------- VIP FUNCTIONS ---------------------------
+def is_vip(user_id: int) -> bool:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
-async def list_vips_db() -> Dict[int, datetime]:
-    out = {}
-    async with aiosqlite.connect(DB_FILE) as db:
-        async with db.execute("SELECT user_id, expires FROM vips") as cur:
-            async for uid, exp in cur:
-                try:
-                    out[int(uid)] = datetime.fromisoformat(exp)
-                except:
-                    continue
-    if OWNER_ID not in out:
-        out[OWNER_ID] = datetime.now() + timedelta(days=3650)
-    return out
+    cur.execute("SELECT expires_at FROM vip WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
 
-# ---------------- IA ----------------
-async def get_http_session():
-    global HTTP_SESSION
-    if HTTP_SESSION is None or HTTP_SESSION.closed:
-        HTTP_SESSION = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-    return HTTP_SESSION
+    if not row:
+        return False
 
-async def call_text_model(messages: List[dict]) -> str:
-    if not MODEL_API_KEY:
-        return messages[-1].get("content", "")
+    expires = datetime.fromisoformat(row[0])
+    return expires > datetime.utcnow()
 
-    session = await get_http_session()
-    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+def add_vip(user_id: int, days: int):
+    expires = datetime.utcnow() + timedelta(days=days)
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT OR REPLACE INTO vip (user_id, expires_at)
+        VALUES (?, ?)
+    """, (user_id, expires.isoformat()))
+    conn.commit()
+    conn.close()
+
+    return expires
+
+
+def remove_expired_vips():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM vip WHERE expires_at <= ?", (datetime.utcnow().isoformat(),))
+    conn.commit()
+    conn.close()
+
+
+# --------------------------- IA CALL ---------------------------
+async def ask_ai(prompt: str):
+    url = "https://api.openai.com/v1/chat/completions"
+
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+    }
 
     headers = {
         "Authorization": f"Bearer {MODEL_API_KEY}",
         "Content-Type": "application/json",
     }
 
-    payload = {
-        "model": "deepseek-ai/deepseek-v3.1-terminus",
-        "messages": messages,
-        "max_tokens": 512,
-    }
+    r = requests.post(url, json=data, headers=headers)
+    res = r.json()
 
     try:
-        async with session.post(url, json=payload, headers=headers) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                return data["choices"][0]["message"]["content"]
-            return "⚠️ Error del modelo."
+        return res["choices"][0]["message"]["content"]
     except:
-        return "❌ Error conectando con la IA."
+        return "❌ Error en la IA."
 
-# ---------------- Notificaciones ----------------
-async def notify_owner(text: str):
-    if not APPL:
-        return
-    try:
-        await APPL.bot.send_message(chat_id=OWNER_ID, text=text, parse_mode=ParseMode.MARKDOWN)
-    except:
-        pass
 
-async def notify_new_vip(vip_id: int, days: int):
-    await notify_owner(f"🔥 Nuevo VIP: `{vip_id}` por {days} días.")
-    try:
-        await APPL.bot.send_message(
-            chat_id=vip_id,
-            text=f"🎉 Ahora eres VIP por {days} días.\nDisfruta!",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-    except:
-        pass
-
-# ---------------- Limpieza automática ----------------
-async def cleanup_expired():
-    vips = await list_vips_db()
-    now = datetime.now()
-    removed = []
-    for uid, exp in vips.items():
-        if uid == OWNER_ID:
-            continue
-        if exp <= now:
-            removed.append(uid)
-            await remove_vip_db(uid)
-
-    if removed:
-        await notify_owner(f"♻️ VIPs expirados: {removed}")
-
-async def periodic_cleanup_task():
-    while True:
-        try:
-            await cleanup_expired()
-        except:
-            pass
-        await asyncio.sleep(60)
-
-# ---------------- Handlers ----------------
-async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await cleanup_expired()
+# --------------------------- START ---------------------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    uid = user.id
 
-    vips = await list_vips_db()
-    if uid not in vips or vips[uid] <= datetime.now():
-        return await update.message.reply_text("🚫 Solo VIP. Contacta al admin.")
-
-    # sticker
-    try:
-        st = await update.message.reply_sticker(WELCOME_STICKER)
-        await asyncio.sleep(2)
-        await context.bot.delete_message(chat_id=uid, message_id=st.message_id)
-    except:
-        pass
+    # sticker de bienvenida (1.5s)
+    await update.message.reply_sticker("CAACAgEAAxkBAAIDGWb_QJVdEo-TU3_N0JVpaz6RtZpmAAJdAANWnb8l1BxPTsCkXys2BA")
+    await asyncio.sleep(1.5)
 
     await update.message.reply_text(
-        f"👋 Bienvenido {user.first_name}, eres VIP.\nUsa el menú.",
-        reply_markup=MAIN_MENU,
-        parse_mode=ParseMode.MARKDOWN,
+        f"👋 Que lo que `{user.first_name}`.\n"
+        f"😈 Bienvenido al bot VIP.\n\n"
+        f"Usa /menu para ver opciones."
     )
-    await notify_owner(f"🔔 /start de `{uid}`")
 
-async def addvip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
-        return await update.message.reply_text("⛔ No autorizado.")
-    if len(context.args) < 2:
-        return await update.message.reply_text("Uso: /addvip ID DIAS")
 
-    uid = int(context.args[0])
-    dias = int(context.args[1])
-    await add_vip_db(uid, dias)
-    await update.message.reply_text("✔ VIP agregado.")
-    await notify_new_vip(uid, dias)
+# --------------------------- MENU ---------------------------
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🤖 Usar IA", callback_data="use_ai")],
+        [InlineKeyboardButton("🖼 Editar Imagen", callback_data="edit_img")],
+        [InlineKeyboardButton("⭐ Estado VIP", callback_data="vip_status")],
+        [InlineKeyboardButton("🛠 Admin", callback_data="admin")],
+    ]
+    await update.message.reply_text("📍 MENÚ", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def delvip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
-        return await update.message.reply_text("⛔ No autorizado.")
-    if len(context.args) < 1:
-        return await update.message.reply_text("Uso: /delvip ID")
 
-    uid = int(context.args[0])
-    await remove_vip_db(uid)
-    await update.message.reply_text("🗑 VIP eliminado.")
+# --------------------------- CALLBACKS ---------------------------
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-async def extendvip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
+    user_id = query.from_user.id
+
+    if query.data == "vip_status":
+        status = "✅ Activo" if is_vip(user_id) else "❌ NO VIP"
+        await query.edit_message_text(f"⭐ Tu estado VIP: **{status}**")
         return
-    if len(context.args) < 2:
-        return await update.message.reply_text("Uso: /extendvip ID DIAS")
 
-    uid = int(context.args[0])
-    dias = int(context.args[1])
-    ok = await extend_vip_db(uid, dias)
-    if not ok:
-        return await update.message.reply_text("No era VIP.")
-    await update.message.reply_text("⏳ VIP extendido.")
+    if query.data == "admin":
+        if user_id != OWNER_ID:
+            await query.edit_message_text("❌ No eres owner.")
+            return
 
-async def listvip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
-        return
-    vip = await list_vips_db()
-    txt = "⭐ VIPs:\n\n"
-    for uid, exp in vip.items():
-        left = (exp - datetime.now()).days
-        txt += f"`{uid}` — {left} días\n"
-    await update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN)
+        keyboard = [
+            [InlineKeyboardButton("➕ Agregar VIP", callback_data="admin_addvip")],
+            [InlineKeyboardButton("🗑 Limpiar expirados", callback_data="admin_clean")],
+        ]
 
-async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-
-    if text == "📝 Chat IA":
-        return await update.message.reply_text("Escribe tu mensaje para la IA.")
-
-    if text == "🖼 Editar Imagen":
-        return await update.message.reply_text("Edición de imágenes pronto disponible.")
-
-    if text == "⚙️ Configuración":
-        uid = update.effective_user.id
-        vip = await list_vips_db()
-        left = max(0, (vip[uid] - datetime.now()).days)
-        return await update.message.reply_text(
-            f"⚙️ Configuración\nID: `{uid}`\nDías VIP restantes: {left}",
-            parse_mode=ParseMode.MARKDOWN,
+        await query.edit_message_text(
+            "🛠 Panel administrativo",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    if text == "ℹ️ Info VIP":
-        vip = await list_vips_db()
-        count = len(vip) - 1
-        return await update.message.reply_text(f"VIP activos: {count}")
+        return
 
-    asyncio.create_task(process_ai(update, context))
+    if query.data == "admin_clean":
+        remove_expired_vips()
+        await query.edit_message_text("🧹 VIP expirados eliminados.")
+        return
 
-async def process_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    vip = await list_vips_db()
+    if query.data == "admin_addvip":
+        await query.edit_message_text("Envia:  `/addvip user_id días`", parse_mode="Markdown")
+        return
 
-    if uid not in vip or vip[uid] <= datetime.now():
-        return await update.message.reply_text("🚫 Solo VIP.")
+    if query.data == "use_ai":
+        await query.edit_message_text("✍️ Escribe tu prompt para la IA.")
+        return
 
-    prompt = update.message.text
+    if query.data == "edit_img":
+        await query.edit_message_text("📤 Envia una imagen para editar.")
+        return
 
-    await context.bot.send_chat_action(chat_id=uid, action="typing")
 
-    messages = [
-        {"role": "system", "content": "Eres un asistente VIP técnico, preciso y directo."},
-        {"role": "user", "content": prompt},
-    ]
+# --------------------------- ADD VIP COMMAND ---------------------------
+async def addvip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return await update.message.reply_text("❌ No eres owner.")
 
-    r = await call_text_model(messages)
-    await update.message.reply_text(r)
+    try:
+        user_id = int(context.args[0])
+        days = int(context.args[1])
+    except:
+        return await update.message.reply_text("Formato: /addvip 123456 30")
 
-# ---------------- Webserver ----------------
-app = Flask(__name__)
+    expires = add_vip(user_id, days)
 
-@app.route("/")
-def home():
-    return "Bot VIP activo."
+    await update.message.reply_text(f"✅ VIP agregado hasta {expires}")
 
-def start_web():
-    port = int(os.getenv("PORT", "10000"))
-    app.run(host="0.0.0.0", port=port)
+    # notificar al VIP
+    try:
+        await context.bot.send_message(
+            user_id,
+            f"🎉 Fuiste activado como VIP por {days} días.\nDisfruta!"
+        )
+    except:
+        pass
 
-# ---------------- Run ----------------
-def run():
-    global APPL
-    asyncio.get_event_loop().run_until_complete(init_db())
+    # notificar al owner
+    await context.bot.send_message(
+        OWNER_ID,
+        f"🔔 Nuevo VIP agregado:\nID: {user_id}\nDías: {days}\nHasta: {expires}"
+    )
 
-    APPL = ApplicationBuilder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
 
-    APPL.add_handler(CommandHandler("start", start_handler))
-    APPL.add_handler(CommandHandler("addvip", addvip))
-    APPL.add_handler(CommandHandler("delvip", delvip))
-    APPL.add_handler(CommandHandler("extendvip", extendvip))
-    APPL.add_handler(CommandHandler("listvip", listvip))
+# --------------------------- IA MENSAJES ---------------------------
+async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
-    APPL.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router))
+    if not is_vip(user_id):
+        return await update.message.reply_text("❌ Solo usuarios VIP pueden usar la IA.")
 
-    async def on_start(app):
-        app.create_task(periodic_cleanup_task())
+    text = update.message.text
 
-    APPL.post_init = on_start
+    response = await ask_ai(text)
+    await update.message.reply_text(response)
 
-    threading.Thread(target=start_web, daemon=True).start()
 
-    APPL.run_polling(drop_pending_updates=True)
+# --------------------------- IMAGE HANDLER ---------------------------
+async def image_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_vip(user_id):
+        return await update.message.reply_text("❌ Necesitas VIP.")
+
+    await update.message.reply_text("🖼 Procesando imagen... (demo)")
+
+    # Aquí integrarías tu API de edición (si quieres lo agrego luego)
+
+
+# --------------------------- MAIN ---------------------------
+def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", menu))
+    app.add_handler(CommandHandler("addvip", addvip_cmd))
+
+    app.add_handler(CallbackQueryHandler(callback_handler))
+
+    app.add_handler(MessageHandler(filters.PHOTO, image_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+
+    print("BOT CORRIENDO...")
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    run()
+    main()
