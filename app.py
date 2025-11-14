@@ -91,9 +91,18 @@ def remove_expired_vips():
 # ---------------- AI REQUEST -----------------
 async def ask_ai(prompt: str):
     try:
+        # Cargar system prompt
+        system_prompt = ""
+        if os.path.exists("system-prompts.txt"):
+            with open("system-prompts.txt", "r", encoding="utf-8") as f:
+                system_prompt = f.read().strip()
+
         completion = client.chat.completions.create(
             model="deepseek-ai/deepseek-v3.1",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
             temperature=0.2,
             top_p=0.7,
             max_tokens=2000,
@@ -101,13 +110,56 @@ async def ask_ai(prompt: str):
             stream=False
         )
 
-        reasoning = ""
         msg = completion.choices[0].message
 
+        # ---- Razonamiento (si existe) ----
+        reasoning = ""
         if hasattr(msg, "reasoning_content") and msg.reasoning_content:
             reasoning = msg.reasoning_content
 
-        final_response = msg["content"]
+        # ---- Contenido final ----
+        final_response = msg.content  # ← FIX AQUÍ
+
+        result = ""
+        if reasoning:
+            result += f"🧠 *Razonamiento:*\n{reasoning}\n\n"
+
+        result += f"💬 *Respuesta:*\n{final_response}"
+
+        return result
+
+    except Exception as e:
+        return f"❌ Error en la IA: {e}"# ---------------- AI REQUEST -----------------
+async def ask_ai(prompt: str):
+    try:
+        # Cargar system prompt
+        system_prompt = ""
+        if os.path.exists("system-prompts.txt"):
+            with open("system-prompts.txt", "r", encoding="utf-8") as f:
+                system_prompt = f.read().strip()
+
+        completion = client.chat.completions.create(
+            model="deepseek-ai/deepseek-v3.1",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            top_p=0.7,
+            max_tokens=2000,
+            extra_body={"chat_template_kwargs": {"thinking": True}},
+            stream=False
+        )
+
+        msg = completion.choices[0].message
+
+        # ---- Razonamiento (si existe) ----
+        reasoning = ""
+        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+            reasoning = msg.reasoning_content
+
+        # ---- Contenido final ----
+        final_response = msg.content  # ← FIX AQUÍ
 
         result = ""
         if reasoning:
