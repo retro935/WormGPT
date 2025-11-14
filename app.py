@@ -106,72 +106,16 @@ async def ask_ai(prompt: str):
             temperature=0.2,
             top_p=0.7,
             max_tokens=2000,
-            extra_body={"chat_template_kwargs": {"thinking": True}},
+            extra_body={"chat_template_kwargs": {"thinking": False}},
             stream=False
         )
 
-        msg = completion.choices[0].message
-
-        # ---- Razonamiento (si existe) ----
-        reasoning = ""
-        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-            reasoning = msg.reasoning_content
-
-        # ---- Contenido final ----
-        final_response = msg.content  # ← FIX AQUÍ
-
-        result = ""
-        if reasoning:
-            result += f"🧠 *Razonamiento:*\n{reasoning}\n\n"
-
-        result += f"💬 *Respuesta:*\n{final_response}"
-
-        return result
-
-    except Exception as e:
-        return f"❌ Error en la IA: {e}"# ---------------- AI REQUEST -----------------
-async def ask_ai(prompt: str):
-    try:
-        # Cargar system prompt
-        system_prompt = ""
-        if os.path.exists("system-prompts.txt"):
-            with open("system-prompts.txt", "r", encoding="utf-8") as f:
-                system_prompt = f.read().strip()
-
-        completion = client.chat.completions.create(
-            model="deepseek-ai/deepseek-v3.1",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            top_p=0.7,
-            max_tokens=2000,
-            extra_body={"chat_template_kwargs": {"thinking": True}},
-            stream=False
-        )
-
-        msg = completion.choices[0].message
-
-        # ---- Razonamiento (si existe) ----
-        reasoning = ""
-        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-            reasoning = msg.reasoning_content
-
-        # ---- Contenido final ----
-        final_response = msg.content  # ← FIX AQUÍ
-
-        result = ""
-        if reasoning:
-            result += f"🧠 *Razonamiento:*\n{reasoning}\n\n"
-
-        result += f"💬 *Respuesta:*\n{final_response}"
-
-        return result
+        # DEVUELVE SOLO RESPUESTA FINAL
+        final_response = completion.choices[0].message.content
+        return final_response
 
     except Exception as e:
         return f"❌ Error en la IA: {e}"
-
 
 # ---------------- START -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -273,7 +217,23 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("❌ Solo usuarios VIP pueden usar la IA.")
 
     text = update.message.text
+
+    # ----- Sticker pensando -----
+    thinking_msg = await context.bot.send_sticker(
+        chat_id=update.effective_chat.id,
+        sticker="CAACAgEAAxkBAAE90AJpFtQXZ4J90fBT2-R3oBJqi6IUewACrwIAAphXIUS8lNoZG4P3rDYE"
+    )
+
+    # ----- Llamada a IA -----
     result = await ask_ai(text)
+
+    # ----- Eliminar sticker -----
+    try:
+        await thinking_msg.delete()
+    except:
+        pass
+
+    # ----- Respuesta final -----
     await update.message.reply_text(result, parse_mode="Markdown")
 
 # ---------------- IMAGE -----------------
