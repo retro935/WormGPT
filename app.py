@@ -83,9 +83,9 @@ def remove_expired_vips():
 
 # ---------------- AI REQUEST -----------------
 async def ask_ai(prompt: str):
-    url = "https://api.openai.com/v1/chat/completions"
+    url = "https://integrate.api.nvidia.com/v1"
     data = {
-        "model": "gpt-4o-mini",
+        "model": "deepseek-ai/deepseek-v3.1",
         "messages": [{"role": "user", "content": prompt}],
     }
     headers = {
@@ -110,8 +110,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(1.5)
 
     await update.message.reply_text(
-        f"👋 Que lo que `{user.first_name}`.\n"
-        f"😈 Bienvenido al bot VIP.\n\n"
+        f"👋 Kloq `{user.first_name}`.\n"
+        f"🍆 Bienvenido a RetroAI.\n\n"
         f"Usa /menu para ver opciones."
     )
 
