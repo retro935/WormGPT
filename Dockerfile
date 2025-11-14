@@ -11,4 +11,4 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 EXPOSE 8080
 
-CMD ["python", "keepalive.py"]
+CMD ["python", "app.py"]
