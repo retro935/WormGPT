@@ -1,6 +1,6 @@
+python-telegram-bot>=13,<22
 pillow
 pytesseract
-python-telegram-bot==20.7
 aiohttp
 aiosqlite
 flask
