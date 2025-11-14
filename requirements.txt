@@ -5,3 +5,4 @@ aiohttp
 aiosqlite
 flask
 requests
+openai
