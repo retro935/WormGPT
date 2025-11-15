@@ -6,4 +6,3 @@ aiosqlite
 flask
 requests
 openai
---root-user-action=ignore
