@@ -1,4 +1,3 @@
-```python
 # app.py — WormGPT v3 (full completed code for Render 😈)
 import os
 import logging
