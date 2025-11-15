@@ -46,7 +46,7 @@ USER_USAGE = {}
 USER_SETTINGS: Dict[int, Dict[str, object]] = {}
 
 THINKING_STICKER = "CAACAgEAAxkBAAE90AJpFtQXZ4J90fBT2-R3oBJqi6IUewACrwIAAphXIUS8lNoZG4P3rDYE"
-WELCOME_VIDEO_FILE_ID = "CgACAgEAAxkBAAE91r9pF3uWnepP_C5YzrdCO1mkBbFciAACGAYAAlHOwERjU9CvEbbjajYE"
+WELCOME_VIDEO_FILE_ID = "BAACAgEAAxkBAAE93qZpGIXcLmSzIMLwb8nfEoYplVZOjgACVwgAAuugyURqe1ju_n0wPzYE"
 
 BASE_SYSTEM_PROMPT = "You are a helpful AI assistant. Respond concisely and accurately to the user's query."
 
