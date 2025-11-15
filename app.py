@@ -483,4 +483,39 @@ def main():
 
     # Commands
     app.add_handler(CommandHandler("start", start_handler))
-    app.a
+    # Otros comandos
+    app.add_handler(CommandHandler("help", help_handler))
+    app.add_handler(CommandHandler("menu", menu_handler))
+
+    # VIP admin
+    app.add_handler(CommandHandler("addvip", addvip_command))
+    app.add_handler(CommandHandler("delvip", delvip_command))
+    app.add_handler(CommandHandler("listvip", listvip_command))
+    app.add_handler(CommandHandler("whoami", whoami_command))
+    app.add_handler(CommandHandler("myvip", myvip_command))
+
+    # Botones (callback queries)
+    app.add_handler(CallbackQueryHandler(callback_query_handler))
+
+    # Mensajes normales → IA
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_ai_text))
+
+    # Tarea periódica (limpiar VIPs expirados)
+    async def periodic_cleanup(context):
+        await clean_expired_vips_and_notify(app)
+
+    app.job_queue.run_repeating(periodic_cleanup, interval=60, first=10)
+
+    # Log
+    logger.info("🐍 WormGPT bot iniciado correctamente…")
+
+    # Iniciar bot
+    app.run_polling(drop_pending_updates=True)
+
+
+# ---------------- Entrypoint ----------------
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.exception(f"❌ Error fatal al iniciar WormGPT: {e}")
