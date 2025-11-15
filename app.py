@@ -1,3 +1,4 @@
+# app.py — WormGPT v3 (fixed video file_id syntax 😈)
 import os
 import logging
 import asyncio
@@ -33,8 +34,8 @@ DB_FILE = os.getenv("DB_FILE", "wormgpt_v3.sqlite3")
 # thinking sticker (will be sent when AI is processing and deleted after)
 THINKING_STICKER = "CAACAgEAAxkBAAE90AJpFtQXZ4J90fBT2-R3oBJqi6IUewACrwIAAphXIUS8lNoZG4P3rDYE"
 
-# Welcome video URL (short video for VIP welcome; replace with your video file/URL)
-send_video ( video= "CgACAgEAAxkBAAE91r9pF3uWnepP_C5YzrdCO1mkBbFciAACGAYAAlHOwERjU9CvEbbjajYE"  # Placeholder: usa tu URL o file_id de Telegram
+# Welcome video file_id (usa este de Telegram para bienvenida VIP)
+WELCOME_VIDEO_FILE_ID = "CgACAgEAAxkBAAE91r9pF3uWnepP_C5YzrdCO1mkBbFciAACGAYAAlHOwERjU9CvEbbjajYE"  # Tu file_id aquí
 
 # Single active model (change this string to another later if needed)
 ACTIVE_MODEL = "deepseek-ai/deepseek-r1"
@@ -245,30 +246,30 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if uid not in vips or vips[uid] <= datetime.utcnow():
         # Non-VIP: send message with fallback
-        non_vip_msg = (
-            f"🐛 Hola {user.first_name or user.username},\n\n"
-            "WormGPT es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.\n\n"
-            f"Tu User ID: {uid}\n\n"
-            f"Contacto admin: {ADMIN_USERNAME}"
-        )
+        non_vip_msg = f"""🐛 Hola {user.first_name or user.username},
+
+WormGPT es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.
+
+Tu User ID: {uid}
+
+Contacto admin: {ADMIN_USERNAME}"""
         try:
             await update.message.reply_text(non_vip_msg, parse_mode=ParseMode.MARKDOWN)
             logger.info(f"Non-VIP message sent to {uid}")
         except Exception as e:
             logger.error(f"Markdown fail for non-VIP: {e}. Trying plain text.")
-            await update.message.reply_text(non_vip_msg.replace("`", ""))  # Fallback plain
+            await update.message.reply_text(non_vip_msg)  # Fallback plain
             logger.info(f"Plain non-VIP message sent to {uid}")
         return
 
     # VIP: send welcome video + message + keyboard
-    welcome_msg = (
-        f"🐛 ¡Bienvenido, {user.first_name or user.username}! WormGPT activado 😈 — eres VIP ✅\n\n"
-        "Usa el menú para explorar."
-    )
+    welcome_msg = f"""🐛 ¡Bienvenido, {user.first_name or user.username}! WormGPT activado 😈 — eres VIP ✅
+
+Usa el menú para explorar."""
     try:
         await context.bot.send_video(
             chat_id=update.effective_chat.id,
-            video=WELCOME_VIDEO_URL,  # O usa file_id si es un video subido a Telegram
+            video=WELCOME_VIDEO_FILE_ID,  # Usa el file_id directo aquí
             caption=welcome_msg,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=build_main_keyboard(uid)
@@ -281,20 +282,21 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(welcome_msg, reply_markup=build_main_keyboard(uid), parse_mode=ParseMode.MARKDOWN)
         except Exception as e2:
             logger.error(f"Text fallback fail: {e2}")
-            await update.message.reply_text(welcome_msg.replace("`", ""))  # Plain fallback
+            await update.message.reply_text(welcome_msg)  # Plain fallback
         logger.info(f"VIP welcome text sent to {uid}")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help for non-VIP or general"""
     user = update.effective_user
     uid = user.id
-    non_vip_msg = (
-        f"🐛 Hola {user.first_name or user.username},\n\n"
-        "WormGPT es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.\n\n"
-        f"Tu User ID: {uid}\n\n"
-        f"Contacto admin: {ADMIN_USERNAME}"
-    )
-    await update.message.reply_text(non_vip_msg.replace("`", ""))
+    non_vip_msg = f"""🐛 Hola {user.first_name or user.username},
+
+WormGPT es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.
+
+Tu User ID: {uid}
+
+Contacto admin: {ADMIN_USERNAME}"""
+    await update.message.reply_text(non_vip_msg)
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -481,28 +483,4 @@ def main():
 
     # Commands
     app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("help", help_handler))  # New: /help for non-VIP
-    app.add_handler(CommandHandler("menu", menu_handler))
-    app.add_handler(CommandHandler("addvip", addvip_command))
-    app.add_handler(CommandHandler("delvip", delvip_command))
-    app.add_handler(CommandHandler("listvip", listvip_command))
-    app.add_handler(CommandHandler("whoami", whoami_command))
-    app.add_handler(CommandHandler("myvip", myvip_command))
-
-    # Callbacks and text
-    app.add_handler(CallbackQueryHandler(callback_query_handler))
-    # process AI requests in background to avoid blocking handlers
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: asyncio.create_task(process_ai_text(u, c))))
-
-    # register periodic cleanup on startup
-    async def _on_startup(a):
-        a.create_task(periodic_cleanup(a))
-        logger.info("Tarea periódica de limpieza iniciada.")
-
-    app.post_init = _on_startup
-
-    logger.info("🐛 WormGPT v3 arrancando... 😈")
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == "__main__":
-    main()
+    app.a
