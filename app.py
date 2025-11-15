@@ -34,7 +34,7 @@ DB_FILE = os.getenv("DB_FILE", "wormgpt_v3.sqlite3")
 THINKING_STICKER = "CAACAgEAAxkBAAE90AJpFtQXZ4J90fBT2-R3oBJqi6IUewACrwIAAphXIUS8lNoZG4P3rDYE"
 
 # Welcome video URL (short video for VIP welcome; replace with your video file/URL)
-send_video(video= "CgACAgEAAxkBAAE91r9pF3uWnepP_C5YzrdCO1mkBbFciAACGAYAAlHOwERjU9CvEbbjajYE"  # Placeholder: usa tu URL o file_id de Telegram
+send_video ( video= "CgACAgEAAxkBAAE91r9pF3uWnepP_C5YzrdCO1mkBbFciAACGAYAAlHOwERjU9CvEbbjajYE"  # Placeholder: usa tu URL o file_id de Telegram
 
 # Single active model (change this string to another later if needed)
 ACTIVE_MODEL = "deepseek-ai/deepseek-r1"
