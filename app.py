@@ -504,7 +504,11 @@ def main():
     async def periodic_cleanup(context):
         await clean_expired_vips_and_notify(app)
 
+    # Desactivamos JobQueue si no está disponible
+if app.job_queue:
     app.job_queue.run_repeating(periodic_cleanup, interval=60, first=10)
+else:
+    logger.warning("⚠️ JobQueue no disponible — limpiador VIP desactivado.")
 
     # Log
     logger.info("🐍 WormGPT bot iniciado correctamente…")
