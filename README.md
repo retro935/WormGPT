@@ -1,5 +1,5 @@
 FreeBot
-Experimental Telegram bot con AI uncensored para research.
+Experimental
 
 ## Env Vars
 - TELEGRAM_TOKEN: Tu bot token.
