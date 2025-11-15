@@ -227,7 +227,7 @@ async def ask_model(system_prompt: str, user_prompt: str, model: str, reasoning_
 # ---------------- Keyboard / UI ----------------
 def build_main_keyboard(uid: int) -> InlineKeyboardMarkup:
     s = get_user_settings(uid)
-    reasoning_label = "🧠 Razonamiento: ON" if s.get("reasoning") else "🧠 Razonamiento: OFF"
+    reasoning_label = "🧠 Modo diablo: ON" if s.get("reasoning") else "🧠 Modo diablo: OFF"
     maintenance_label = "🛑 Mantenimiento: ON" if s.get("maintenance") else "🟢 Mantenimiento: OFF"
     model_label = f"🐛 Modelo: {ACTIVE_MODEL.split('/')[-1]}"
     keyboard = [
@@ -256,7 +256,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Non-VIP: send message with fallback
         non_vip_msg = f"""🐛 Hola {user.first_name or user.username},
 
-WormGPT es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.
+RetroAI es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.
 
 Tu User ID: {uid}
 
@@ -271,7 +271,7 @@ Contacto admin: {ADMIN_USERNAME}"""
         return
 
     # VIP: send welcome video + message + keyboard
-    welcome_msg = f"""🐛 ¡Bienvenido, {user.first_name or user.username}! WormGPT activado 😈 — eres VIP ✅
+    welcome_msg = f"""🐛 ¡Bienvenido, {user.first_name or user.username}! RetroAI activado — eres VIP ✅
 
 Usa el menú para explorar."""
     try:
@@ -297,9 +297,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help for non-VIP or general"""
     user = update.effective_user
     uid = user.id
-    non_vip_msg = f"""🐛 Hola {user.first_name or user.username},
+    non_vip_msg = f""" Hola {user.first_name or user.username},
 
-WormGPT es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.
+RetroAI es exclusivo para usuarios VIP. Contacta al admin para acceso y envíale tu ID.
 
 Tu User ID: {uid}
 
@@ -308,7 +308,7 @@ Contacto admin: {ADMIN_USERNAME}"""
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    await update.message.reply_text("🐛 Menú WormGPT:", reply_markup=build_main_keyboard(uid))
+    await update.message.reply_text("Menú:", reply_markup=build_main_keyboard(uid))
 
 async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -317,7 +317,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
     data = query.data
 
     if data == "use_ai":
-        return await query.edit_message_text("😈 Escribe tu consulta en el chat (envía texto).")
+        return await query.edit_message_text(" Escribe tu consulta en el chat sin miedo (envía texto).")
 
     if data == "toggle_reasoning":
         s = get_user_settings(uid)
@@ -333,7 +333,7 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
         return await query.edit_message_text(f"🔧 Mantenimiento {'activado' if s['maintenance'] else 'desactivado'}.", reply_markup=build_main_keyboard(uid))
 
     if data == "show_model":
-        return await query.edit_message_text(f"🐛 Modelo actual: `{ACTIVE_MODEL}`\n(Próximamente podrás listar/seleccionar más modelos)", parse_mode=ParseMode.MARKDOWN)
+        return await query.edit_message_text(f"🐛 Modelo actual: `{ACTIVE_MODEL}`\n(Próximamente podrás usar/seleccionar más modelos)", parse_mode=ParseMode.MARKDOWN)
 
     if data == "vip_status":
         vips = await list_vips_db()
@@ -430,5 +430,8 @@ async def process_ai_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     vips = await list_vips_db()
     if uid not in vips or vips[uid] <= datetime.utcnow():
         return await msg.reply_text("🚫 Solo usuarios VIP pueden usar WormGPT.")
-
+if __name__ == "__main__":
+    import time
+    while True:
+        time.sleep(10)
     # check maintenance (global/process
