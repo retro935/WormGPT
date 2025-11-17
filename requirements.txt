@@ -1,4 +1,5 @@
-python-telegram-bot==21.6
+pip==25.3
+python-telegram-bot==21.4
 aiohttp==3.10.5
 faiss-cpu==1.8.0.post1
 numpy==2.1.2
