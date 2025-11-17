@@ -128,7 +128,7 @@ async def log_msg(context, update, msg):
     except:
         pass
 
-# === HTML FORMATTER (MANUAL, SIN MARKDOWN) ===
+# === HTML FORMATTER (SIN MARKDOWN) ===
 def format_response(reply: str) -> tuple:
     # Asegura FraudGPT: al inicio
     if not reply.strip().startswith("FraudGPT:"):
@@ -160,7 +160,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("Premium", callback_data="premium_info")]]
     msg = (
         "Welcome to **FraudGPT By Retro**\n"
-        "Model: GPT-J V2\n"
+        "Model: DeepSeek-R1\n"
         "Owner: t.me/swippe_god\n\n"
         "Just type anything — I speak your language.\n"
         f"Free: {FREE_DAILY_LIMIT}/day | Premium: ∞"
@@ -171,36 +171,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     args = context.args
-    if user_id == OWNER_ID and len(args) == 2:
-        try:
-            uid, days = str(int(args[0])), int(args[1])
-            if days <= 0: raise ValueError()
-            exp = (date.today() + timedelta(days=days)).isoformat()
-            USER_PREMIUM[uid] = USER_PREMIUM.get(uid, {})
-            USER_PREMIUM[uid].update({"premium": True, "expiry_date": exp})
-            save_file(USER_PREMIUM, USER_PREMIUM_FILE)
-            await update.message.reply_text(f"Premium activado: {uid} por {days} días.")
-            return
-        except:
-            await update.message.reply_text("Admin: /premium <id> <days>")
-            return
-    days = int(args[0]) if args and args[0].isdigit() and int(args[0]) > 0 else None
-    exp = (date.today() + timedelta(days=days)).isoformat() if days else None
-    uid = str(user_id)
-    USER_PREMIUM[uid] = {"premium": True, "expiry_date": exp, "usage": 0, "date": date.today().isoformat()}
-    save_file(USER_PREMIUM, USER_PREMIUM_FILE)
-    await update.message.reply_text(f"Premium ON! {'Ilimitado' if not days else f'{days} días'}")
+    if user_id != OWNER_ID:
+        await update.message.reply_text("Joder, cabrón 😈 — solo el admin puede dar premium. "
+                                        "¡Compra premium contactando a t.me/swippe_god y no seas un pobre mierda!")
+        return
+    if len(args) != 2:
+        await update.message.reply_text("Uso admin: /premium <user_id> <days>")
+        return
+    try:
+        uid, days = str(int(args[0])), int(args[1])
+        if days <= 0: raise ValueError()
+        exp = (date.today() + timedelta(days=days)).isoformat()
+        USER_PREMIUM[uid] = USER_PREMIUM.get(uid, {})
+        USER_PREMIUM[uid].update({"premium": True, "expiry_date": exp, "usage": 0, "date": date.today().isoformat()})
+        save_file(USER_PREMIUM, USER_PREMIUM_FILE)
+        await update.message.reply_text(f"Premium activado para {uid} por {days} días (exp: {exp}).")
+    except:
+        await update.message.reply_text("ID o días inválidos, cabrón.")
 
-# === Callbacks ===
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    if q.data == "premium_info":
-        rem = get_remaining(q.from_user.id)
-        prem = is_premium(q.from_user.id)
-        exp = USER_PREMIUM.get(str(q.from_user.id), {}).get("expiry_date")
-        status = f"Premium (exp: {exp})" if prem and exp else ("Premium" if prem else f"Free ({rem}/{FREE_DAILY_LIMIT})")
-        await q.edit_message_text(f"Estado: {status}\n/premium para activar.", parse_mode=ParseMode.HTML)
+# === /checkpremium ===
+async def checkpremium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    rem = get_remaining(user_id)
+    prem = is_premium(user_id)
+    exp = USER_PREMIUM.get(str(user_id), {}).get("expiry_date")
+    status = f"Premium (exp: {exp or 'ilimitado'})" if prem else f"Free ({rem}/{FREE_DAILY_LIMIT})"
+    await update.message.reply_text(f"Tu status: {status}")
 
 # === MESSAGE HANDLER ===
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -274,9 +270,9 @@ app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(button))
 app.add_handler(CommandHandler("premium", premium_cmd))
+app.add_handler(CommandHandler("checkpremium", checkpremium_cmd))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
-# === Run Bot ===
 def run_bot():
     print("🚀 WormGPT Bot Running... (DeepSeek)")
     app.run_polling()
