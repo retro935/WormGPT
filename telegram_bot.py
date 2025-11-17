@@ -128,7 +128,7 @@ async def log_msg(context, update, msg):
     except:
         pass
 
-# === HTML FORMATTER (SIN MARKDOWN) ===
+# === HTML FORMATTER (MANUAL, SIN MARKDOWN) ===
 def format_response(reply: str) -> tuple:
     # Asegura FraudGPT: al inicio
     if not reply.strip().startswith("FraudGPT:"):
@@ -277,4 +277,5 @@ app.add_handler(CommandHandler("premium", premium_cmd))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 if __name__ == "__main__":
-    telegram_bot.run_bot()
+    print("FraudGPT v7.0 Running... SIN MARKDOWN, SIN TEXTO CRUDO")
+    app.run_polling()
