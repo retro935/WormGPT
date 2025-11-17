@@ -2,8 +2,9 @@ import os
 import aiohttp
 import json
 import time
+import re  # Para detectar bloques de código
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,23 +14,25 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-from telegram.constants import ChatAction
+from telegram.constants import ChatAction, ParseMode
 
 # === Config / Env ===
 CONFIG_FILE = "wormgpt_config.json"
 PROMPT_FILE = "system-prompt.txt"
 USER_LANG_FILE = "user_langs.json"
-USER_PREMIUM_FILE = "user_premium.json"  # ¡NUEVO! Archivo para sistema premium
+USER_PREMIUM_FILE = "user_premium.json"  # Archivo para sistema premium
 
 MODEL_CONFIG = {
-    "name": "deepseek-ai/deepseek-r1-0528",
+    "name": "deepseek-ai/deepseek-r1-0528",  # Modelo válido para NVIDIA NIM
     "base_url": "https://integrate.api.nvidia.com/v1",
-    "key": os.getenv("OPENROUTER_KEY"),
+    "key": os.getenv("NVIDIA_API_KEY"),  # Configura en .env o Render
 }
 
 SITE_URL = "t.me/swippe_god"
 SITE_NAME = "Retro AI [ dangerous⚠️ ]"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+OWNER_ID = int(os.getenv("OWNER_ID", "1234567890"))  # ID del admin. Configura en .env
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", None)  # ¡NUEVO! ID del canal de logs (ej. -1001234567890)
 
 # === Anti-Flood ===
 LAST_MESSAGE_TIME = {}
@@ -39,8 +42,8 @@ FLOOD_DELAY = 3
 FREE_DAILY_LIMIT = 5  # Mensajes gratis por día
 PREMIUM_DAILY_LIMIT = float('inf')  # Ilimitado para premium
 
-# === Sticker Animado (ejemplo; reemplaza con tu ID real de sticker animado) ===
-THINKING_STICKER = "CAACAgEAAxkBAAE90AJpFtQXZ4J90fBT2-R3oBJqi6IUewACrwIAAphXIUS8lNoZG4P3rDYE..."  # ID de sticker animado (obtén de Telegram Sticker Bot)
+# === Sticker de "Escribiendo" (animado de escritura/typing) ===
+WRITING_STICKER = "CAACAgIAAxkBAAIB..."  # Reemplaza con ID real de sticker "escribiendo"
 
 # === Load base system prompt ===
 if os.path.exists(PROMPT_FILE):
@@ -84,12 +87,32 @@ def save_user_premium():
 def get_user_status(user_id: int):
     uid = str(user_id)
     today = date.today().isoformat()
-    user_data = USER_PREMIUM.get(uid, {"premium": False, "usage": 0, "date": today})
+    user_data = USER_PREMIUM.get(uid, {"premium": False, "usage": 0, "date": today, "expiry_date": None})
+    
+    # Si es el admin (OWNER_ID), fuerza premium=True y expiry=None (ilimitado)
+    if user_id == OWNER_ID:
+        user_data["premium"] = True
+        user_data["expiry_date"] = None  # Ilimitado
     
     # Reset uso diario si es nuevo día
     if user_data["date"] != today:
         user_data["usage"] = 0
         user_data["date"] = today
+        USER_PREMIUM[uid] = user_data
+        save_user_premium()
+    
+    # Verifica expiración
+    expiry = user_data.get("expiry_date")
+    if expiry and expiry < today:
+        user_data["premium"] = False
+        user_data["expiry_date"] = None
+        USER_PREMIUM[uid] = user_data
+        save_user_premium()
+    
+    # Guarda si cambió por admin
+    if user_id == OWNER_ID and not user_data.get("premium", False):
+        user_data["premium"] = True
+        user_data["expiry_date"] = None
         USER_PREMIUM[uid] = user_data
         save_user_premium()
     
@@ -110,19 +133,111 @@ def get_remaining_usage(user_id: int) -> int:
     limit = PREMIUM_DAILY_LIMIT if is_premium_user(user_id) else FREE_DAILY_LIMIT
     return max(0, limit - user_data["usage"])
 
-# === /premium command (Admin simulado; en prod, integra pago) ===
+# === /premium command (Self-service simulado) ===
 async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     uid = str(user_id)
     
-    # Simula activación premium (en prod: verifica pago, ej. Stripe)
+    # Simula activación (en prod: verifica pago)
     if uid not in USER_PREMIUM:
-        USER_PREMIUM[uid] = {"premium": True, "usage": 0, "date": date.today().isoformat()}
+        USER_PREMIUM[uid] = {"premium": True, "usage": 0, "date": date.today().isoformat(), "expiry_date": None}  # Ilimitado simulado
     else:
         USER_PREMIUM[uid]["premium"] = True
+        USER_PREMIUM[uid]["expiry_date"] = None  # Ilimitado simulado
     
     save_user_premium()
     await update.message.reply_text("✅ ¡Premium activado! Ahora tienes uso ilimitado. (Simulado; integra pago real).")
+
+# === /adddays command (Admin: Añade días premium) ===
+async def adddays_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    
+    # Verifica si es el admin
+    if user_id != OWNER_ID:
+        await update.message.reply_text("❌ No autorizado. Solo el admin puede usar /adddays.")
+        return
+    
+    args = context.args
+    if len(args) != 2:
+        await update.message.reply_text("Uso: /adddays <user_id> <days>\nEjemplo: /adddays 123456789 30")
+        return
+    
+    try:
+        target_uid = str(int(args[0]))
+        days = int(args[1])
+        if days <= 0:
+            raise ValueError("Días debe ser > 0")
+        
+        expiry_date = (date.today() + timedelta(days=days)).isoformat()
+        if target_uid not in USER_PREMIUM:
+            USER_PREMIUM[target_uid] = {"premium": True, "usage": 0, "date": date.today().isoformat(), "expiry_date": expiry_date}
+        else:
+            USER_PREMIUM[target_uid]["premium"] = True
+            USER_PREMIUM[target_uid]["expiry_date"] = expiry_date
+        
+        save_user_premium()
+        await update.message.reply_text(f"✅ Usuario {target_uid} añadido como premium por {days} días (expira: {expiry_date}).")
+    except ValueError:
+        await update.message.reply_text("❌ <user_id> y <days> deben ser números enteros válidos (days > 0).")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+# === /removepremium command (Admin: Remueve premium) ===
+async def removepremium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    
+    # Verifica si es el admin
+    if user_id != OWNER_ID:
+        await update.message.reply_text("❌ No autorizado. Solo el admin puede usar /removepremium.")
+        return
+    
+    args = context.args
+    if len(args) != 1:
+        await update.message.reply_text("Uso: /removepremium <user_id>\nEjemplo: /removepremium 123456789")
+        return
+    
+    try:
+        target_uid = str(int(args[0]))
+        if target_uid in USER_PREMIUM:
+            USER_PREMIUM[target_uid]["premium"] = False
+            USER_PREMIUM[target_uid]["expiry_date"] = None  # Borra expiración
+            save_user_premium()
+            await update.message.reply_text(f"✅ Premium removido para usuario {target_uid}.")
+        else:
+            await update.message.reply_text(f"❌ Usuario {target_uid} no encontrado.")
+    except ValueError:
+        await update.message.reply_text("❌ <user_id> debe ser un número entero válido.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+# === Función para Loggear Mensaje a Canal ===
+async def log_user_message(context: ContextTypes.DEFAULT_TYPE, update: Update, user_msg: str):
+    if not LOG_CHANNEL_ID:
+        print(f"LOG: User {update.effective_user.id} (@{update.effective_user.username}): {user_msg}")
+        return
+    
+    user_status = get_user_status(update.effective_user.id)
+    is_prem = "Premium" if user_status["premium"] else "Free"
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    log_msg = (
+        f"🗨️ **Nuevo Mensaje**\n"
+        f"👤 User ID: `{update.effective_user.id}`\n"
+        f"🆔 Username: @{update.effective_user.username or 'No username'}\n"
+        f"📅 Timestamp: {timestamp}\n"
+        f"💎 Status: {is_prem}\n"
+        f"📝 Mensaje: {user_msg}\n"
+        f"---"
+    )
+    
+    try:
+        await context.bot.send_message(
+            chat_id=LOG_CHANNEL_ID,
+            text=log_msg,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception as e:
+        print(f"Error enviando log a canal: {e}")
 
 # === Build unsafe system prompt ===
 def make_system_prompt(lang_code: str) -> str:
@@ -156,7 +271,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🇪🇸 Español", callback_data="lang_es"),
             InlineKeyboardButton("🇺🇸 English", callback_data="lang_en"),
         ],
-        [InlineKeyboardButton("⭐ Premium", callback_data="premium_info")],  # ¡NUEVO! Botón info premium
+        [InlineKeyboardButton("⭐ Premium", callback_data="premium_info")],  # Botón info premium
     ]
 
     msg = (
@@ -171,7 +286,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# === Callback para Premium Info ===
+# === Callback para Premium Info (Mejorado: Muestra expiry si aplica) ===
 async def premium_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -180,8 +295,12 @@ async def premium_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = query.from_user.id
         remaining = get_remaining_usage(user_id)
         is_prem = is_premium_user(user_id)
+        user_data = get_user_status(user_id)
+        expiry_info = ""
+        if is_prem and user_data.get("expiry_date"):
+            expiry_info = f"\nExpira: {user_data['expiry_date']}"
         
-        status = "⭐ Premium (Unlimited)" if is_prem else f"Free ({remaining}/{FREE_DAILY_LIMIT} left)"
+        status = f"⭐ Premium (Unlimited{expiry_info})" if is_prem else f"Free ({remaining}/{FREE_DAILY_LIMIT} left)"
         await query.edit_message_text(f"Your status: {status}\nUse /premium to upgrade (simulado).")
 
 # === Language Callback ===
@@ -206,12 +325,27 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_user_lang(user_id: int) -> str:
     return USER_LANGS.get(str(user_id), "es")
 
-# === Message Handler (¡REEMPLAZADO CON AIOHTTP + STICKER + PREMIUM!) ===
+# === Función para formatear respuesta con código detectado ===
+def format_response_with_code(reply: str) -> tuple:
+    """Detecta bloques de código (```) y retorna texto formateado para MarkdownV2."""
+    if '```' in reply:
+        # Usa MarkdownV2 para formatear código
+        # Escapa chars especiales de MarkdownV2: \ _ * [ ] ( ) ~ ` > # + - = | { } . !
+        escape_chars = r'_*[]()~`>#+-=|{}.!'
+        formatted = re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', reply)
+        return formatted, ParseMode.MARKDOWN_V2
+    return reply, None  # Texto plano si no hay código
+
+# === Message Handler (¡MEJORADO: Loggea mensaje antes de procesar) ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_username = context.bot_data.get("username", "")
     user_id = update.message.from_user.id
     user_msg = update.message.text or ""
     chat_type = update.message.chat.type
+
+    # === Loggea el mensaje del usuario (solo si no es comando) ===
+    if not user_msg.startswith('/'):
+        await log_user_message(context, update, user_msg)
 
     # === Anti Flood ===
     now = time.time()
@@ -223,10 +357,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     LAST_MESSAGE_TIME[user_id] = now
 
-    # === Must mention bot in group ===
-    if chat_type in ["group", "supergroup"]:
-        if not user_msg.startswith("/") and f"@{bot_username}" not in user_msg:
-            return  # ignore
+    # === En grupos: Responde a TODOS los mensajes de texto (sin mención) ===
+    if chat_type in ["group", "supergroup"] and user_msg.startswith("/"):
+        return  # Ignora comandos en grupo
 
     # === Check Premium/Límite ===
     remaining = get_remaining_usage(user_id)
@@ -239,13 +372,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     increment_usage(user_id)
 
-    # === Envía Sticker Animado + Typing ===
+    # === Envía Sticker de "Escribiendo" + Typing ===
+    sticker_msg = None
     try:
         await update.message.chat.send_action(ChatAction.TYPING)
-        sticker_msg = await update.message.chat.send_sticker(sticker=THINKING_STICKER)
+        sticker_msg = await update.message.chat.send_sticker(sticker=WRITING_STICKER)
     except Exception as e:
-        print(f"Error enviando sticker: {e}")
-        sticker_msg = None  # Si falla, solo typing
+        print(f"Error enviando sticker de escribiendo: {e}")
 
     # === Build worm prompt ===
     lang = get_user_lang(user_id)
@@ -263,6 +396,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     headers = {
         "Authorization": f"Bearer {MODEL_CONFIG['key']}",
         "Content-Type": "application/json",
+        "Accept": "application/json",
     }
 
     reply = None
@@ -283,14 +417,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         reply = f"❌ Request failed: {e}"
 
-    # === Borra Sticker y envía respuesta ===
+    # === Formatea si hay código ===
+    formatted_reply, parse_mode = format_response_with_code(reply)
+
+    # === Borra Sticker de "escribiendo" y envía respuesta ===
     if sticker_msg:
         try:
             await context.bot.delete_message(chat_id=update.message.chat_id, message_id=sticker_msg.message_id)
         except:
-            pass  # Ignora si no se puede borrar
+            pass
 
-    await update.message.reply_text(reply)
+    # Envía con parse_mode si hay código
+    if parse_mode:
+        await update.message.reply_text(formatted_reply, parse_mode=parse_mode)
+    else:
+        await update.message.reply_text(formatted_reply)
 
 # === /setlang command ===
 async def setlang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -313,14 +454,16 @@ app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(language_callback, pattern="^lang_"))
-app.add_handler(CallbackQueryHandler(premium_callback, pattern="^premium_"))  # ¡NUEVO! Para info premium
+app.add_handler(CallbackQueryHandler(premium_callback, pattern="^premium_"))  
 app.add_handler(CommandHandler("setlang", setlang_cmd))
-app.add_handler(CommandHandler("premium", premium_cmd))  # ¡NUEVO! Comando para activar premium
+app.add_handler(CommandHandler("premium", premium_cmd))  
+app.add_handler(CommandHandler("adddays", adddays_cmd))  
+app.add_handler(CommandHandler("removepremium", removepremium_cmd))  
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # === Run Bot ===
 def run_bot():
-    print("🚀 WormGPT Bot Running... (DeepSeek con AIOHTTP + Premium + Sticker)")
+    print("🚀 WormGPT Bot Running... (DeepSeek con Logs a Canal + Sticker 'Escribiendo' + Premium Expiry)")
     app.run_polling()
 
 if __name__ == "__main__":
