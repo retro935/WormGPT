@@ -3,7 +3,6 @@ import aiohttp
 import json
 import time
 import re
-import markdown
 from pathlib import Path
 from datetime import date, timedelta
 from collections import defaultdict, deque
@@ -129,27 +128,31 @@ async def log_msg(context, update, msg):
     except:
         pass
 
-# === MARKDOWN → HTML ===
-def md_to_html(reply: str) -> tuple:
-    code_blocks = {}
-    def save_code(m):
-        ph = f"__CODE_{len(code_blocks)}__"
-        lang = m.group(1).strip() or "text"
+# === HTML FORMATTER (SIN MARKDOWN) ===
+def format_response(reply: str) -> tuple:
+    # Asegura FraudGPT: al inicio
+    if not reply.strip().startswith("FraudGPT:"):
+        reply = "FraudGPT: " + reply.strip()
+
+    # Escapa todo
+    html = reply.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    # **negrita** → <b>
+    html = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html)
+
+    # *cursiva* → <i>
+    html = re.sub(r'\*(.*?)\*', r'<i>\1</i>', html)
+
+    # Bloques de código ```...```
+    def code_block(m):
+        lang = m.group(1).strip() if m.group(1) else "text"
         code = m.group(2).strip()
-        code_blocks[ph] = (lang, code)
-        return ph
-    reply = re.sub(r'```(\w+)?\n(.*?)\n```', save_code, reply, flags=re.DOTALL)
-    reply = re.sub(r'```(.*?)```', save_code, reply, flags=re.DOTALL)
-
-    html = markdown.markdown(reply, extensions=['fenced_code'], output_format='html')
-
-    for ph, (lang, code) in code_blocks.items():
         safe = code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-        block = f'<pre><code class="language-{lang}">{safe}</code></pre>'
-        html = html.replace(ph, block)
+        return f'<pre><code class="language-{lang}">{safe}</code></pre>'
+    
+    html = re.sub(r'```(\w+)?\n(.*?)\n```', code_block, html, flags=re.DOTALL)
+    html = re.sub(r'```(.*?)```', code_block, html, flags=re.DOTALL)
 
-    html = html.replace('<', '&lt;').replace('>', '&gt;')
-    html = re.sub(r'&lt;(/?(pre|code|b|i|em|strong)[^&]*)&gt;', r'<\1>', html)
     return html, ParseMode.HTML
 
 # === /start ===
@@ -262,9 +265,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-    # Final response
-    final = f"<b>FraudGPT:</b> {reply}"
-    html, mode = md_to_html(final)
+    # === RESPUESTA FINAL ===
+    html, mode = format_response(reply)
     await update.message.reply_text(html, parse_mode=mode)
 
 # === APP ===
@@ -275,5 +277,5 @@ app.add_handler(CommandHandler("premium", premium_cmd))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 if __name__ == "__main__":
-    print("FraudGPT v6.66 Running... Pure Evil")
+    print("FraudGPT v7.0 Running... SIN MARKDOWN, SIN TEXTO CRUDO")
     app.run_polling()
