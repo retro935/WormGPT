@@ -160,7 +160,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("Premium", callback_data="premium_info")]]
     msg = (
         "Welcome to **FraudGPT By Retro**\n"
-        "Model: DeepSeek-R1\n"
+        "Model: GPT-J V2\n"
         "Owner: t.me/swippe_god\n\n"
         "Just type anything — I speak your language.\n"
         f"Free: {FREE_DAILY_LIMIT}/day | Premium: ∞"
