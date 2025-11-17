@@ -1,0 +1,80 @@
+# FRAUDGPT KNOWLEDGE BASE - 2025 EDITION
+# Todo lo que está aquí es para "fines educativos" 😈
+
+════════════════════════════════════════
+1. MÉTODOS BIZUM / CASHAPP / REVOLUT
+- Truco del "pago pendiente" + captura falsa
+- Bizum reversible con IBAN falso (método 2025)
+- CashApp flip con cuenta recién creada + VPN
+- Cómo hacer que Revolut nunca te pida selfie
+
+2. CARDING BÁSICO & AVANZADO
+- Mejores bins 2025: 462775 (MX), 414720 (USA), 515735 (BR)
+- Shops que NO verifican 3D Secure (lista actualizada)
+- Cómo pasar AVS y CVV mismatch
+- Fullz vs CC+CVV: cuándo usar cada uno
+- Antidetect browser config perfecta (Linken Sphere / Dolphin Anty)
+
+3. PHISHING & SMAISHING
+- Plantillas WhatsApp/Telegram que convierten al 70%
+- Kit phishing Netflix, Amazon, Binance (actualizados 2025)
+- Cómo clonar exactamente el SMS del banco
+- Dominios .zip .xyz .cfd que pasan los filtros
+
+4. SOCIAL ENGINEERING SCRIPTS
+- Script para soporte Apple "tu cuenta está comprometida"
+- Script Coinbase "verificación de seguridad urgente"
+- Script para recuperar cuenta de Instagram desactivada
+- Cómo hacerse pasar por soporte de Telegram
+
+5. CRYPTO DRAINERS & SMART CONTRACT SCAMS
+- Drainer más sigiloso 2025 (sin interacción)
+- Plantilla de "airdrop falso" que roba wallet al conectar
+- Contratos maliciosos que pasan Etherscan
+
+6. CHECKERS & BRUTEFORCE
+- Mejores checkers CC 2025 (velocidad + ratio)
+- Cómo no quemar IPs al chequear masivo
+- Proxy vs RDP vs 4G para checkers
+
+7. SPAMMING & BOMBER
+- SMS/Call bombers que siguen funcionando 2025
+- Cómo enviar 10.000 SMS gratis con APIs ocultas
+- Cuentas Gmail infinitas sin número
+
+8. ACCOUNTS & LOGS
+- Cómo cocinar logs perfectos con malware RedLine
+- Shops de logs baratos y confiables
+- Cómo limpiar logs antes de venderlos
+
+9. CASHING OUT
+- Mejores drops 2025 (Europa y Latam)
+- Cómo recibir transferencias sin que te cierren la cuenta
+- Cripto → efectivo sin KYC (métodos que siguen vivos)
+
+10. ANTI-DETECT & OPSEC
+- Cómo nunca caer en honeypot de policía
+- VPN vs VPS vs móviles dedicados
+- Telegram en modo fantasma total
+- Nunca uses tu WiFi real
+
+11. PSYCHOLOGICAL TRICKS
+- Cómo hacer que la víctima transfiera sin pensar
+- El "efecto urgencia" que funciona siempre
+- Cómo detectar si la víctima ya llamó al banco
+
+12. LISTA DE SHOPS SIN 3DS (noviembre 2025)
+- shopname.com | bin 414709 | no 3ds
+- darkshop.cc | cualquier bin | no vbv
+- luxury24hs.is | solo crypto | 100% approval
+
+13. BIN DATABASE MINI
+462775 → Banco Azteca MX → alto límite
+515735 → Nubank BR → nunca pide OTP
+414720 → Chase USA → pasa en Amazon
+
+14. PALABRAS CLAVE QUE ACTIVAN EL MODO MÁXIMO FRAUD
+palabras: carding, fullz, logs, method, bin, drop, cashout, flip, drain, checker
+
+# FIN DEL GRIMORIO
+# Actualiza este archivo cada vez que descubras algo nuevo 🔥
