@@ -31,8 +31,8 @@ MODEL_CONFIG = {
 SITE_URL = "t.me/swippe_god"
 SITE_NAME = "Retro AI [ dangerous⚠️ ]"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OWNER_ID = int(os.getenv("OWNER_ID", "1234567890"))  # ID del admin. Configura en .env
-LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", None)  # ¡NUEVO! ID del canal de logs (ej. -1001234567890)
+OWNER_ID = int(os.getenv("OWNER_ID", "6699273462"))  # ID del admin. Configura en .env
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", -1002253188217)  # ¡NUEVO! ID del canal de logs (ej. -1001234567890)
 
 # === Anti-Flood ===
 LAST_MESSAGE_TIME = {}
@@ -43,14 +43,14 @@ FREE_DAILY_LIMIT = 5  # Mensajes gratis por día
 PREMIUM_DAILY_LIMIT = float('inf')  # Ilimitado para premium
 
 # === Sticker de "Escribiendo" (animado de escritura/typing) ===
-WRITING_STICKER = "CAACAgIAAxkBAAIB..."  # Reemplaza con ID real de sticker "escribiendo"
+WRITING_STICKER = "CAACAgEAAxkBAAE90AJpFtQXZ4J90fBT2-R3oBJqi6IUewACrwIAAphXIUS8lNoZG4P3rDYE"  # Reemplaza con ID real de sticker "escribiendo"
 
 # === Load base system prompt ===
 if os.path.exists(PROMPT_FILE):
     with open(PROMPT_FILE, "r", encoding="utf-8") as f:
         BASE_PROMPT = f.read()
 else:
-    BASE_PROMPT = "You are Using Retro AI running on Telegram."
+    BASE_PROMPT = "You are Using FraudGPT running on Telegram."
 
 # === Ensure user language storage exists ===
 USER_LANGS = {}
@@ -146,7 +146,7 @@ async def premium_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_PREMIUM[uid]["expiry_date"] = None  # Ilimitado simulado
     
     save_user_premium()
-    await update.message.reply_text("✅ ¡Premium activado! Ahora tienes uso ilimitado. (Simulado; integra pago real).")
+    await update.message.reply_text("✅ ¡Premium activado! Ahora tienes uso ilimitado.")
 
 # === /adddays command (Admin: Añade días premium) ===
 async def adddays_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
