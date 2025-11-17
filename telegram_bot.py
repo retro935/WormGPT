@@ -276,6 +276,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 def run_bot():
     print("FraudGPT v7.0 Running... SIN MARKDOWN, SIN TEXTO CRUDO")
     app.run_polling()
-
-if __name__ == "__main__":
-    run_bot()
+    
