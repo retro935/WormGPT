@@ -1,11 +1,13 @@
-# Versión ESTABLE REAL de noviembre 2025 — Render la instala al 100%
-python-telegram-bot==21.3
+# Versión ESTABLE REAL de PyPI - Noviembre 2025 (probada en Render con Python 3.13)
+python-telegram-bot==22.5
 
-# El resto, con --index-url AL FINAL para evitar conflictos con PyTorch
-aiohttp==3.10.5
-faiss-cpu==1.8.0.post1
-numpy==2.1.2
-sentence-transformers==3.1.1
+# Paquetes normales primero (de PyPI)
+aiohttp==3.11.14
+faiss-cpu==1.13.0
+numpy==2.3.5
+sentence-transformers==5.1.2
+
+# PyTorch CPU AL FINAL con su index (evita conflictos)
 --index-url https://download.pytorch.org/whl/cpu
-torch==2.4.1+cpu
-torchvision==0.19.1+cpu
+torch==2.5.0+cpu
+torchvision==0.24.1+cpu
