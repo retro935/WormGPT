@@ -1,4 +1,6 @@
-python-telegram-bot==20.3
-aiohttp
-python-dotenv
-flask
+python-telegram-bot==20.7
+aiohttp==3.10.5
+sentence_transformers==3.1.1
+numpy==1.26.4
+faiss-cpu==1.8.0  # Usa faiss-cpu para Render (free tier no tiene GPU)
+torch==2.4.1  # Requerido por sentence_transformers
