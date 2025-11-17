@@ -89,7 +89,7 @@ LANG_DB = {
     "es": ["el", "la", "de", "que", "y", "en", "un", "es", "no", "me"],
     "en": ["the", "be", "to", "of", "and", "in", "that", "have", "it", "for"],
     "fr": ["le", "la", "de", "et", "un", "est", "pas", "je", "tu", "il"],
-    "ru": ["и", "в", "не", "на", "я", "с", "что", "а", "по", "как"],
+    "ru": ["и", "в", "не", "на", "я", "с", "что", "а", "по", "como"],
 }
 
 def detect_lang(text: str) -> str:
@@ -274,5 +274,8 @@ app.add_handler(CommandHandler("checkpremium", checkpremium_cmd))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 def run_bot():
-    print("🚀 WormGPT Bot Running... (DeepSeek)")
+    print("FraudGPT v7.0 Running... SIN MARKDOWN, SIN TEXTO CRUDO")
     app.run_polling()
+
+if __name__ == "__main__":
+    run_bot()
