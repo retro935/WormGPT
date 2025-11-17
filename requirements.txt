@@ -1,6 +1,16 @@
-python-telegram-bot
-aiohttp
-sentence_transformers
-numpy
-faiss-cpu
-torch
+# === CORE ===
+python-telegram-bot==21.6
+aiohttp==3.10.5
+faiss-cpu==1.8.0.post1
+numpy==2.1.2
+
+# === SENTENCE-TRANSFORMERS + TORCH (versión ligera y estable para Render) ===
+torch==2.4.1+cpu
+torchvision==0.19.1+cpu
+torchaudio==2.4.1+cpu
+--index-url https://download.pytorch.org/whl/cpu
+
+sentence-transformers==3.1.1
+
+# === OPCIONALES PERO RECOMENDADOS ===
+pydantic==2.9.2
