@@ -277,5 +277,5 @@ app.add_handler(CommandHandler("premium", premium_cmd))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 if __name__ == "__main__":
-    print("FraudGPT v7.0 Running... SIN MARKDOWN, SIN TEXTO CRUDO")
-    app.run_polling()
+    print("INICIANDO FRAUDGPT v7.0...")
+    telegram_bot.run_bot()  # ← ESTO DEBE ESTAR
