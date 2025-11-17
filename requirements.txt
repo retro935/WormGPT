@@ -1,11 +1,11 @@
-# Versión estable REAL de noviembre 2025 — Render la instala perfecto
-python-telegram-bot==20.7
+# Versión ESTABLE REAL de noviembre 2025 — Render la instala al 100%
+python-telegram-bot==21.3
 
-# El resto igual, pero sin --index-url al principio (lo mueve a torch para evitar conflictos)
+# El resto, con --index-url AL FINAL para evitar conflictos con PyTorch
 aiohttp==3.10.5
 faiss-cpu==1.8.0.post1
 numpy==2.1.2
+sentence-transformers==3.1.1
 --index-url https://download.pytorch.org/whl/cpu
 torch==2.4.1+cpu
 torchvision==0.19.1+cpu
-sentence-transformers==3.1.1
